@@ -4,6 +4,38 @@ import { balanceOf } from "thirdweb/extensions/erc20";
 import { client } from "./client";
 import { SHAMBA_LUV_TOKEN, SHAMBA_LUV_AIRDROP, DEFAULT_CHAIN, isAirdropContractConfigured } from "./tokens";
 import { useState, useEffect } from "react";
+import { inAppWallet, createWallet } from "thirdweb/wallets";
+
+// Account factory address from .env
+const accountFactoryAddress = import.meta.env.VITE_TEMPLATE_ACCOUNT_MANAGER_ADDRESS;
+
+// Configure wallets consistently
+const wallets = [
+  inAppWallet({
+    auth: {
+      options: [
+        "google",
+        "apple", 
+        "facebook",
+        "discord",
+        "line",
+        "x",
+        "coinbase",
+        "farcaster",
+        "telegram",
+        "github",
+        "twitch",
+        "steam",
+        "email",
+        "phone",
+        "passkey",
+        "guest"
+      ],
+    },
+  }),
+  createWallet("io.metamask"),
+  createWallet("com.coinbase.wallet"),
+];
 
 // Create contract instances
 const shambaLuvToken = getContract({
@@ -112,7 +144,13 @@ export function AirdropApp() {
 				<h1 className="text-2xl font-bold text-white">SHAMBA LUV Airdrop</h1>
 				<ConnectButton
 					client={client}
+					wallets={wallets}
 					chain={DEFAULT_CHAIN}
+					accountAbstraction={{
+						chain: DEFAULT_CHAIN,
+						factoryAddress: accountFactoryAddress,
+						sponsorGas: true,
+					}}
 					appMetadata={{
 						name: "SHAMBA LUV Token",
 						url: "https://shambaluv.com",
@@ -135,6 +173,10 @@ export function AirdropApp() {
 					theme="dark"
 					connectModal={{
 						size: "wide",
+						welcomeScreen: {
+							title: "Connect to SHAMBA LUV",
+							subtitle: "Get your airdrop with a smart wallet account",
+						},
 					}}
 				/>
 			</header>

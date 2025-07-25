@@ -1,20 +1,39 @@
 import { ConnectButton, ThirdwebProvider, useActiveAccount } from "thirdweb/react";
-import { inAppWallet } from "thirdweb/wallets";
 import { useState, useEffect } from "react";
 import { client } from "./client";
 import { AirdropApp } from "./AirdropApp";
 import { DEFAULT_CHAIN, SHAMBA_LUV_TOKEN } from "./tokens";
+import { inAppWallet, createWallet } from "thirdweb/wallets";
 
+// Account factory address from .env
+const accountFactoryAddress = import.meta.env.VITE_TEMPLATE_ACCOUNT_MANAGER_ADDRESS;
+
+// Configure wallets like the working example
 const wallets = [
-	inAppWallet({
-		auth: {
-			options: ["email", "google", "apple", "phone", "passkey", "farcaster"],
-		},
-		smartAccount: {
-			chain: DEFAULT_CHAIN,
-			sponsorGas: true,
-		},
-	}),
+  inAppWallet({
+    auth: {
+      options: [
+        "google",
+        "apple", 
+        "facebook",
+        "discord",
+        "line",
+        "x",
+        "coinbase",
+        "farcaster",
+        "telegram",
+        "github",
+        "twitch",
+        "steam",
+        "email",
+        "phone",
+        "passkey",
+        "guest"
+      ],
+    },
+  }),
+  createWallet("io.metamask"),
+  createWallet("com.coinbase.wallet"),
 ];
 
 function AppContent() {
@@ -132,6 +151,7 @@ function TrippyLandingPage() {
 								chain={DEFAULT_CHAIN}
 								accountAbstraction={{
 									chain: DEFAULT_CHAIN,
+									factoryAddress: accountFactoryAddress,
 									sponsorGas: true,
 								}}
 								appMetadata={{
