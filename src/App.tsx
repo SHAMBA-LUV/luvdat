@@ -533,7 +533,7 @@ function TrippyLandingPage() {
 						<div className="bg-black/40 backdrop-blur-lg rounded-2xl p-6 border border-gray-500/30">
 							<h3 className="text-xl font-bold text-white mb-3">⛽ What makes gas sponsorship special?</h3>
 							<p className="text-gray-300">
-								Through Account Abstraction and thirdweb's infrastructure, all your transactions are sponsored. 
+								Through Account Abstraction technology, all your transactions are sponsored. 
 								You never need to worry about having MATIC for gas fees - everything is completely free for users!
 							</p>
 						</div>
