@@ -5,6 +5,7 @@ import { AirdropApp } from "./AirdropApp";
 import { DEFAULT_CHAIN, SHAMBA_LUV_TOKEN, SHAMBA_LUV_AIRDROP, isAirdropContractConfigured } from "./tokens";
 import { inAppWallet, createWallet } from "thirdweb/wallets";
 import { getContract } from "thirdweb";
+import { registerUser } from "./utils/airdropProtection";
 
 // Account factory address from .env
 const accountFactoryAddress = import.meta.env.VITE_TEMPLATE_ACCOUNT_MANAGER_ADDRESS;
@@ -39,6 +40,35 @@ const wallets = [
 
 function AppContent() {
 	const account = useActiveAccount();
+	const [userRegistered, setUserRegistered] = useState(false);
+
+	// Register user when account connects
+	useEffect(() => {
+		const initializeUser = async () => {
+			if (account?.address && !userRegistered) {
+				try {
+					// Try to detect auth method from wallet type
+					const authMethod = account.address.startsWith('0x') ? 
+						(account as any).wallet?.id || 'unknown' : 'unknown';
+					
+					const registration = await registerUser(
+						account.address, 
+						authMethod
+					);
+					
+					setUserRegistered(registration.success);
+					
+					if (!registration.success) {
+						console.warn('User registration failed:', registration.message);
+					}
+				} catch (error) {
+					console.error('User registration error:', error);
+				}
+			}
+		};
+
+		initializeUser();
+	}, [account?.address, userRegistered]);
 
 	if (account) {
 		return <AirdropApp />;

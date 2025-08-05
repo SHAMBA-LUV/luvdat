@@ -5,6 +5,13 @@ import { client } from "./client";
 import { SHAMBA_LUV_TOKEN, SHAMBA_LUV_AIRDROP, DEFAULT_CHAIN, isAirdropContractConfigured } from "./tokens";
 import { useState, useEffect } from "react";
 import { inAppWallet, createWallet } from "thirdweb/wallets";
+import { 
+  canUserClaim, 
+  registerUser, 
+  recordAirdropClaim, 
+  checkBackendHealth,
+  type ProtectionResult 
+} from "./utils/airdropProtection";
 
 // Account factory address from .env
 const accountFactoryAddress = import.meta.env.VITE_TEMPLATE_ACCOUNT_MANAGER_ADDRESS;
@@ -54,6 +61,9 @@ export function AirdropApp() {
 	const account = useActiveAccount();
 	const [isClaimingAirdrop, setIsClaimingAirdrop] = useState(false);
 	const [airdropClaimed, setAirdropClaimed] = useState(false);
+	const [protectionStatus, setProtectionStatus] = useState<ProtectionResult | null>(null);
+	const [backendHealth, setBackendHealth] = useState<boolean | null>(null);
+	const [userRegistered, setUserRegistered] = useState(false);
 	const { mutate: sendTransaction } = useSendTransaction();
 
 	// Read token balance
@@ -95,44 +105,225 @@ export function AirdropApp() {
 	const formatBalance = (balance: bigint) => {
 		const balanceStr = balance.toString();
 		const decimals = SHAMBA_LUV_TOKEN.decimals;
+		
 		if (balanceStr.length <= decimals) {
-			return `0.${'0'.repeat(decimals - balanceStr.length)}${balanceStr}`;
+			const decimalValue = `0.${'0'.repeat(decimals - balanceStr.length)}${balanceStr}`;
+			// Remove trailing zeros and format nicely
+			const num = parseFloat(decimalValue);
+			return num.toLocaleString('en-US', { maximumFractionDigits: 6 });
 		}
+		
 		const integerPart = balanceStr.slice(0, -decimals);
-		const decimalPart = balanceStr.slice(-decimals);
-		return `${integerPart}.${decimalPart.replace(/0+$/, '') || '0'}`;
+		const decimalPart = balanceStr.slice(-decimals).replace(/0+$/, '');
+		
+		// Convert to number for proper formatting
+		const fullNumber = decimalPart ? `${integerPart}.${decimalPart}` : integerPart;
+		const num = parseFloat(fullNumber);
+		
+		// Format with commas and reasonable decimal places
+		return num.toLocaleString('en-US', { 
+			maximumFractionDigits: decimalPart ? Math.min(decimalPart.length, 6) : 0 
+		});
 	};
 
-	// Claim airdrop function
-	const claimAirdrop = async () => {
-		if (!account || !airdropConfigured || hasClaimedData || isClaimingAirdrop) return;
+	// Check backend health and protection status when account changes
+	useEffect(() => {
+		const initializeProtection = async () => {
+			// Check backend health first
+			const healthCheck = await checkBackendHealth();
+			setBackendHealth(healthCheck);
 
+			if (!account?.address) {
+				setProtectionStatus(null);
+				setUserRegistered(false);
+				return;
+			}
+
+			// Register user if new connection detected
+			if (!userRegistered) {
+				try {
+					// Try to detect auth method from wallet type
+					const authMethod = account.address.startsWith('0x') ? 
+						(account as any).wallet?.id || 'unknown' : 'unknown';
+					
+					const registration = await registerUser(
+						account.address, 
+						authMethod,
+						// Could extract email/social ID if available from wallet
+					);
+					
+					setUserRegistered(registration.success);
+					
+					if (!registration.success && healthCheck) {
+						console.warn('User registration failed:', registration.message);
+					}
+				} catch (error) {
+					console.error('User registration error:', error);
+				}
+			}
+
+			// Check protection status
+			try {
+				const protection = await canUserClaim(account.address);
+				setProtectionStatus(protection);
+			} catch (error) {
+				console.error('Protection check failed:', error);
+				setProtectionStatus({
+					canClaim: true,
+					reason: 'Protection check failed - allowing claim',
+					backendConnected: false
+				});
+			}
+		};
+
+		initializeProtection();
+	}, [account?.address, userRegistered]);
+
+	// Enhanced claim airdrop function with backend integration and detailed logging
+	const claimAirdrop = async () => {
+		console.log('🎯 Starting airdrop claim process...', {
+			account: account?.address,
+			airdropConfigured,
+			hasClaimedData,
+			isClaimingAirdrop,
+			protectionStatus
+		});
+
+		if (!account || !airdropConfigured || hasClaimedData || isClaimingAirdrop) {
+			console.log('❌ Claim blocked - precondition failed:', {
+				hasAccount: !!account,
+				airdropConfigured,
+				alreadyClaimed: hasClaimedData,
+				currentlyClaiming: isClaimingAirdrop
+			});
+			return;
+		}
+		
+		// Check protection status first
+		if (!protectionStatus?.canClaim) {
+			console.log('❌ Claim blocked by protection system:', protectionStatus);
+			alert(protectionStatus?.reason || 'Claim not allowed');
+			return;
+		}
+
+		console.log('✅ All preconditions passed, proceeding with claim...');
 		setIsClaimingAirdrop(true);
+		let transactionHash = '';
+		
 		try {
+			console.log('📄 Preparing blockchain transaction...');
+			// Prepare blockchain transaction
 			const transaction = prepareContractCall({
 				contract: airdropContract,
 				method: "function claimAirdrop()",
 			});
 
-			await sendTransaction(transaction);
+			console.log('🔗 Transaction prepared:', transaction);
+			console.log('📡 Executing transaction...');
+
+			// Execute transaction
+			const result = sendTransaction(transaction);
+			transactionHash = (result as any)?.transactionHash || 'pending';
+			
+			console.log('⚡ Transaction result:', { result, transactionHash });
+			
+			// Record successful claim in backend
+			try {
+				const claimAmount = airdropAmountData ? airdropAmountData.toString() : '1000000000000000000000000000000'; // 1 trillion with 18 decimals
+				
+				console.log('💾 Recording successful claim in backend...', {
+					walletAddress: account.address,
+					claimAmount,
+					transactionHash,
+					status: 'completed'
+				});
+
+				await recordAirdropClaim(
+					account.address,
+					claimAmount,
+					transactionHash,
+					'completed'
+				);
+
+				console.log('✅ Backend claim record saved successfully');
+			} catch (backendError) {
+				console.error('❌ Failed to record claim in backend:', backendError);
+				// Transaction succeeded but backend recording failed - not critical
+			}
+			
+			console.log('🎉 Transaction successful! Setting claim status...');
 			setAirdropClaimed(true);
-		} catch (error) {
-			console.error("Airdrop claim failed:", error);
-			alert("Airdrop claim failed. Please try again.");
+			
+			// Refresh protection status
+			console.log('🔄 Refreshing protection status...');
+			const newProtection = await canUserClaim(account.address);
+			setProtectionStatus(newProtection);
+			console.log('✅ Protection status updated:', newProtection);
+			
+		} catch (error: any) {
+			console.error("💥 AIRDROP CLAIM FAILED:", error);
+			console.error("Error details:", {
+				name: error?.name,
+				message: error?.message,
+				code: error?.code,
+				stack: error?.stack,
+				reason: error?.reason,
+				data: error?.data
+			});
+			
+			// Record failed claim if we have transaction details
+			if (transactionHash && transactionHash !== 'pending') {
+				try {
+					const claimAmount = airdropAmountData ? airdropAmountData.toString() : '1000000000000000000000000000000';
+					
+					console.log('💾 Recording failed claim in backend...', {
+						walletAddress: account.address,
+						claimAmount,
+						transactionHash,
+						status: 'failed',
+						errorMessage: error?.message
+					});
+
+					await recordAirdropClaim(
+						account.address,
+						claimAmount,
+						transactionHash,
+						'failed'
+					);
+
+					console.log('✅ Failed claim recorded in backend');
+				} catch (backendError) {
+					console.error('❌ Failed to record failed claim in backend:', backendError);
+				}
+			}
+			
+			// Show user-friendly error message based on error type
+			let userMessage = "Airdrop claim failed. Please try again.";
+			if (error?.message?.includes("Already claimed")) {
+				userMessage = "You have already claimed your airdrop.";
+			} else if (error?.message?.includes("Insufficient tokens")) {
+				userMessage = "The airdrop contract doesn't have enough tokens. Please contact support.";
+			} else if (error?.message?.includes("User rejected")) {
+				userMessage = "Transaction was cancelled.";
+			}
+			
+			alert(userMessage);
 		} finally {
+			console.log('🏁 Claim process finished, resetting state...');
 			setIsClaimingAirdrop(false);
 		}
 	};
 
-	// Auto-claim airdrop when user connects (if they haven't claimed)
+	// Auto-claim airdrop when user connects (if they haven't claimed and protection allows)
 	useEffect(() => {
-		if (account && airdropConfigured && !claimStatusLoading && hasClaimedData === false && !isClaimingAirdrop && !airdropClaimed) {
+		if (account && airdropConfigured && !claimStatusLoading && hasClaimedData === false && 
+			!isClaimingAirdrop && !airdropClaimed && protectionStatus?.canClaim) {
 			// Small delay to ensure everything is loaded
 			setTimeout(() => {
 				claimAirdrop();
 			}, 2000);
 		}
-	}, [account, hasClaimedData, claimStatusLoading, airdropConfigured]);
+	}, [account, hasClaimedData, claimStatusLoading, airdropConfigured, protectionStatus]);
 
 	const airdropAmount = airdropAmountData ? formatBalance(airdropAmountData) : "0";
 	const hasClaimed = hasClaimedData || airdropClaimed;
@@ -141,7 +332,19 @@ export function AirdropApp() {
 		<div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
 			{/* Header */}
 			<header className="flex justify-between items-center p-6 border-b border-gray-700">
-				<h1 className="text-2xl font-bold text-white">SHAMBA LUV Airdrop</h1>
+				<div className="flex items-center gap-4">
+					<h1 className="text-2xl font-bold text-white">SHAMBA LUV Airdrop</h1>
+					{backendHealth !== null && (
+						<div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
+							backendHealth ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+						}`}>
+							<div className={`w-2 h-2 rounded-full ${
+								backendHealth ? 'bg-green-400' : 'bg-yellow-400'
+							}`} />
+							{backendHealth ? 'Backend Connected' : 'Backend Offline'}
+						</div>
+					)}
+				</div>
 				<ConnectButton
 					client={client}
 					wallets={wallets}
@@ -299,6 +502,26 @@ export function AirdropApp() {
 									<p className="text-gray-300">
 										You have already received your welcome airdrop of {airdropAmount} {SHAMBA_LUV_TOKEN.symbol} tokens
 									</p>
+								</div>
+							) : protectionStatus && !protectionStatus.canClaim ? (
+								<div className="p-8">
+									<div className="text-6xl mb-4">🚫</div>
+									<h4 className="text-xl font-semibold text-red-400 mb-4">
+										Claim Not Allowed
+									</h4>
+									<p className="text-gray-300 mb-4">
+										{protectionStatus.reason}
+									</p>
+									{protectionStatus.riskScore !== undefined && (
+										<p className="text-sm text-gray-400">
+											Risk Score: {protectionStatus.riskScore}/100
+										</p>
+									)}
+									{!protectionStatus.backendConnected && (
+										<p className="text-xs text-yellow-400 mt-2">
+											⚠️ Backend offline - using limited protection
+										</p>
+									)}
 								</div>
 							) : isClaimingAirdrop ? (
 								<div className="p-8">
