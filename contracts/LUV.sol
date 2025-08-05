@@ -169,6 +169,9 @@ contract LUV100Q is ERC20, Ownable, ReentrancyGuard {
     event ReflectionBatchProcessed(uint256 totalFees, uint256 newIndex);
     event GasOptimizationStats(uint256 localTotalSupply, uint256 accumulatedFees);
     
+    // Burn events
+    event TokensBurned(address indexed burner, uint256 amount, address indexed deadAddress);
+    
     // wallet-to-wallet fee exemption
     /// @notice Emitted when a wallet-to-wallet (EOA) transfer occurs with 0% fees
     event WalletToWalletFeeExemptTransfer(address indexed from, address indexed to, uint256 amount);
@@ -809,6 +812,53 @@ contract LUV100Q is ERC20, Ownable, ReentrancyGuard {
         return WETH;
     }
 
+    // ============ BURN FUNCTIONS ============
+    
+    /**
+     * @dev Manual burn function for team to burn tokens to dead address
+     * @param amount Amount of tokens to burn
+     * @notice Only owner can call this function
+     * @notice Tokens are sent to dead address (0x000000000000000000000000000000000000dEaD)
+     * @notice This reduces the total supply permanently
+     */
+    function manualBurn(uint256 amount) external onlyOwner {
+        require(amount > 0, "Burn amount must be positive");
+        require(balanceOf(msg.sender) >= amount, "Insufficient balance to burn");
+        
+        // Dead address constant
+        address deadAddress = 0x000000000000000000000000000000000000dEaD;
+        
+        // Transfer tokens to dead address (permanent burn)
+        _transfer(msg.sender, deadAddress, amount);
+        
+        // Update local total supply for reflection calculations
+        _localTotalSupply -= amount;
+        
+        emit TokensBurned(msg.sender, amount, deadAddress);
+    }
+    
+    /**
+     * @dev Burn tokens from contract balance to dead address
+     * @param amount Amount of tokens to burn from contract
+     * @notice Only owner can call this function
+     * @notice Burns tokens from contract's accumulated fee balance
+     */
+    function burnFromContract(uint256 amount) external onlyOwner {
+        require(amount > 0, "Burn amount must be positive");
+        require(balanceOf(address(this)) >= amount, "Insufficient contract balance");
+        
+        // Dead address constant
+        address deadAddress = 0x000000000000000000000000000000000000dEaD;
+        
+        // Transfer tokens from contract to dead address
+        _transfer(address(this), deadAddress, amount);
+        
+        // Update local total supply for reflection calculations
+        _localTotalSupply -= amount;
+        
+        emit TokensBurned(address(this), amount, deadAddress);
+    }
+    
     // ============ RENOUNCE FUNCTIONS ============
     
     /**

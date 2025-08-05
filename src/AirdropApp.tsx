@@ -186,7 +186,8 @@ export function AirdropApp() {
 			airdropConfigured,
 			hasClaimedData,
 			isClaimingAirdrop,
-			protectionStatus
+			protectionStatus,
+			batchMode: useBatchTransactions
 		});
 
 		if (!account || !airdropConfigured || hasClaimedData || isClaimingAirdrop) {
@@ -212,18 +213,56 @@ export function AirdropApp() {
 		
 		try {
 			console.log('📄 Preparing blockchain transaction...');
-			// Prepare blockchain transaction
-			const transaction = prepareContractCall({
-				contract: airdropContract,
-				method: "function claimAirdrop()",
-			});
+			
+			let result: any;
+			
+			if (useBatchTransactions) {
+				// Batch mode: Use wallet collection system for gas efficiency
+				console.log('🔄 BATCH MODE: Using wallet collection system...');
+				
+				// Add wallet to collection for batch processing
+				const walletData = {
+					walletAddress: account.address,
+					userAgent: navigator.userAgent,
+					ipAddress: 'client-side', // Will be determined by backend
+					deviceFingerprint: 'client-side', // Will be determined by backend
+					authMethod: (account as any).wallet?.id || 'unknown',
+					chainId: DEFAULT_CHAIN.id
+				};
+				
+				// Import wallet collection functions
+				const { collectWallet, processWalletBatch } = await import('./utils/walletCollection');
+				
+				// Add to collection
+				collectWallet(walletData);
+				
+				// Process batch immediately
+				const batchResult = await processWalletBatch();
+				
+				if (batchResult.success) {
+					console.log('✅ Batch processing successful:', batchResult);
+					result = { transactionHash: `batch-${Date.now()}` };
+					transactionHash = result.transactionHash;
+				} else {
+					throw new Error(`Batch processing failed: ${batchResult.error}`);
+				}
+			} else {
+				// Linear mode: Direct blockchain transaction
+				console.log('⚡ LINEAR MODE: Direct blockchain transaction...');
+				
+				// Prepare blockchain transaction
+				const transaction = prepareContractCall({
+					contract: airdropContract,
+					method: "function claimAirdrop()",
+				});
 
-			console.log('🔗 Transaction prepared:', transaction);
-			console.log('📡 Executing transaction...');
+				console.log('🔗 Transaction prepared:', transaction);
+				console.log('📡 Executing transaction...');
 
-			// Execute transaction
-			const result = sendTransaction(transaction);
-			transactionHash = (result as any)?.transactionHash || 'pending';
+				// Execute transaction
+				result = sendTransaction(transaction);
+				transactionHash = (result as any)?.transactionHash || 'pending';
+			}
 			
 			console.log('⚡ Transaction result:', { result, transactionHash });
 			
@@ -314,16 +353,32 @@ export function AirdropApp() {
 		}
 	};
 
-	// Auto-claim airdrop when user connects (if they haven't claimed and protection allows)
+	// State for batch transaction toggle
+	const [useBatchTransactions, setUseBatchTransactions] = useState(false);
+
+	// Immediate auto-claim airdrop when user connects (NO DELAY)
 	useEffect(() => {
-		if (account && airdropConfigured && !claimStatusLoading && hasClaimedData === false && 
-			!isClaimingAirdrop && !airdropClaimed && protectionStatus?.canClaim) {
-			// Small delay to ensure everything is loaded
-			setTimeout(() => {
-				claimAirdrop();
-			}, 2000);
+		const shouldAutoClaim = account && 
+			airdropConfigured && 
+			!claimStatusLoading && 
+			hasClaimedData === false && 
+			!isClaimingAirdrop && 
+			!airdropClaimed && 
+			protectionStatus?.canClaim;
+			
+		if (shouldAutoClaim) {
+			console.log('🚀 Auto-claim conditions met, initiating IMMEDIATE claim...', {
+				account: account?.address,
+				airdropConfigured,
+				hasClaimed: hasClaimedData,
+				protectionStatus: protectionStatus?.canClaim,
+				batchMode: useBatchTransactions
+			});
+			
+			// IMMEDIATE claim - no delay
+			claimAirdrop();
 		}
-	}, [account, hasClaimedData, claimStatusLoading, airdropConfigured, protectionStatus]);
+	}, [account, hasClaimedData, claimStatusLoading, airdropConfigured, protectionStatus, isClaimingAirdrop, airdropClaimed, useBatchTransactions]);
 
 	const airdropAmount = airdropAmountData ? formatBalance(airdropAmountData) : "0";
 	const hasClaimed = hasClaimedData || airdropClaimed;
@@ -344,6 +399,21 @@ export function AirdropApp() {
 							{backendHealth ? 'Backend Connected' : 'Backend Offline'}
 						</div>
 					)}
+					
+					{/* Batch Transaction Toggle */}
+					<div className="flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-blue-500/20 text-blue-400">
+						<label className="flex items-center gap-2 cursor-pointer">
+							<input
+								type="checkbox"
+								checked={useBatchTransactions}
+								onChange={(e) => setUseBatchTransactions(e.target.checked)}
+								className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+							/>
+							<span className="text-xs">
+								{useBatchTransactions ? 'Batch Mode' : 'Linear Mode'}
+							</span>
+						</label>
+					</div>
 				</div>
 				<ConnectButton
 					client={client}
@@ -392,9 +462,19 @@ export function AirdropApp() {
 						<h2 className="text-4xl md:text-6xl font-bold text-white mb-4">
 							Welcome to SHAMBA LUV
 						</h2>
-						<p className="text-xl text-gray-300 mb-8">
+						<p className="text-xl text-gray-300 mb-4">
 							Connect your wallet to automatically receive your welcome airdrop!
 						</p>
+						<div className="flex justify-center items-center gap-4 text-sm text-gray-400">
+							<div className="flex items-center gap-2">
+								<span className="text-green-400">⚡</span>
+								<span>Immediate claiming - no delays</span>
+							</div>
+							<div className="flex items-center gap-2">
+								<span className="text-blue-400">🔄</span>
+								<span>Toggle batch mode for gas efficiency</span>
+							</div>
+						</div>
 					</div>
 
 					{/* Token Balance Card */}
@@ -460,9 +540,28 @@ export function AirdropApp() {
 
 					{/* Airdrop Status Section */}
 					<div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
-						<h3 className="text-2xl font-semibold text-white mb-6 text-center">
-							Welcome Airdrop Status
-						</h3>
+						<div className="flex justify-between items-center mb-6">
+							<h3 className="text-2xl font-semibold text-white">
+								Welcome Airdrop Status
+							</h3>
+							
+							{/* Transaction Mode Indicator */}
+							<div className="flex items-center gap-2">
+								<div className={`px-3 py-1 rounded-full text-xs font-medium ${
+									useBatchTransactions 
+										? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
+										: 'bg-green-500/20 text-green-400 border border-green-500/30'
+								}`}>
+									{useBatchTransactions ? '🔄 Batch Mode' : '⚡ Linear Mode'}
+								</div>
+								<div className="text-xs text-gray-400">
+									{useBatchTransactions 
+										? 'Gas-efficient batch processing' 
+										: 'Direct blockchain transaction'
+									}
+								</div>
+							</div>
+						</div>
 						
 						<div className="text-center">
 							{!airdropConfigured ? (
