@@ -317,7 +317,7 @@ function TrippyLandingPage() {
 					<div className="text-xl md:text-3xl font-bold text-white mb-8 opacity-90">
 						<span className="inline-block animate-pulse">✨</span>
 						<span className="mx-2 text-gradient bg-gradient-to-r from-yellow-400 to-pink-400 bg-clip-text text-transparent">
-							The Love Token
+							Phase 1 LUV is priceless
 						</span>
 						<span className="inline-block animate-pulse">✨</span>
 					</div>
@@ -483,7 +483,7 @@ function TrippyLandingPage() {
 									</div>
 									<div>
 										<div className="text-white font-semibold">Gas Sponsorship</div>
-										<div className="text-gray-400 text-sm">All transactions are gasless</div>
+										<div className="text-gray-400 text-sm">Airdrop claims are gasless</div>
 									</div>
 								</div>
 							</div>
@@ -571,8 +571,8 @@ function TrippyLandingPage() {
 						
 						<div className="bg-black/30 backdrop-blur-lg rounded-2xl p-6 border border-yellow-500/30 hover:border-yellow-500/60 transition-all duration-300">
 							<div className="text-4xl mb-4">⛽</div>
-							<h3 className="text-xl font-bold text-white mb-2">Zero Gas Fees</h3>
-							<p className="text-gray-400">All transactions sponsored - never pay gas fees again</p>
+							<h3 className="text-xl font-bold text-white mb-2">Airdrop Gas Sponsored</h3>
+							<p className="text-gray-400">Airdrop transactions sponsored - claim your tokens for free</p>
 						</div>
 						
 						<div className="bg-black/30 backdrop-blur-lg rounded-2xl p-6 border border-green-500/30 hover:border-green-500/60 transition-all duration-300">
@@ -626,8 +626,8 @@ function TrippyLandingPage() {
 						<div className="bg-black/40 backdrop-blur-lg rounded-2xl p-6 border border-gray-500/30">
 							<h3 className="text-xl font-bold text-white mb-3">⛽ What makes gas sponsorship special?</h3>
 							<p className="text-gray-300">
-								Through Account Abstraction technology, all your transactions are sponsored. 
-								You never need to worry about having MATIC for gas fees - everything is completely free for users!
+								Through Account Abstraction technology, your airdrop claim transaction is sponsored. 
+								You never need to worry about having MATIC for gas fees when claiming your free tokens!
 							</p>
 						</div>
 						
