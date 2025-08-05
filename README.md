@@ -244,17 +244,17 @@ Edit `src/App.tsx`:
 
 ### **Project Documentation**
 
-- **[Burn Functions Guide](./docs/BURN_FUNCTIONS_ADDED.md)** - Complete guide to the burn functions added to the LUV contract
-- **[Database Setup](./docs/DATABASE_SETUP.md)** - PostgreSQL database setup and configuration guide
-- **[Deployment Guide](./docs/DEPLOY.md)** - Step-by-step deployment instructions and best practices
-- **[Immediate Airdrop Update](./docs/IMMEDIATE_AIRDROP_UPDATE.md)** - Details about the immediate airdrop functionality
-- **[License](./docs/LICENSE.md)** - Project license information
-- **[Supply Analysis](./docs/SUPPLY_ANALYSIS.md)** - Analysis of the 100 Quadrillion token supply structure
-- **[Thirdweb Setup Guide](./docs/THIRDWEB_SETUP.md)** - Comprehensive Thirdweb setup guide with troubleshooting
+- **[Burn Functions Guide](docs/BURN_FUNCTIONS_ADDED.md)** - Complete guide to the burn functions added to the LUV contract
+- **[Database Setup](docs/DATABASE_SETUP.md)** - PostgreSQL database setup and configuration guide
+- **[Deployment Guide](docs/DEPLOY.md)** - Step-by-step deployment instructions and best practices
+- **[Immediate Airdrop Update](docs/IMMEDIATE_AIRDROP_UPDATE.md)** - Details about the immediate airdrop functionality
+- **[License](docs/LICENSE.md)** - Project license information
+- **[Supply Analysis](docs/SUPPLY_ANALYSIS.md)** - Analysis of the 100 Quadrillion token supply structure
+- **[Thirdweb Setup Guide](docs/THIRDWEB_SETUP.md)** - Comprehensive Thirdweb setup guide with troubleshooting
 
 ### **Graphics & Assets**
 
-- **[Graphics Documentation](./public/gfx/README.md)** - Graphics folder structure and asset management guide
+- **[Graphics Documentation](public/gfx/README.md)** - Graphics folder structure and asset management guide
 
 ## 📚 Thirdweb Documentation
 
