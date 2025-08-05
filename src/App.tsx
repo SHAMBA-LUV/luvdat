@@ -197,6 +197,62 @@ function TrippyLandingPage() {
 
 	return (
 		<div className="min-h-screen overflow-hidden relative bg-black">
+			{/* Connect Button - Top Left Corner */}
+			<div className="absolute top-6 left-6 z-50">
+				<div className="relative">
+					<div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-600 rounded-xl blur-lg opacity-50 animate-pulse" />
+					<div className="relative bg-gradient-to-r from-pink-500 to-purple-600 p-0.5 rounded-xl hover:scale-105 transition-transform duration-300">
+						<div className="bg-black rounded-lg p-2">
+							<ConnectButton
+								client={client}
+								wallets={wallets}
+								chain={DEFAULT_CHAIN}
+								accountAbstraction={{
+									chain: DEFAULT_CHAIN,
+									factoryAddress: accountFactoryAddress,
+									sponsorGas: true,
+								}}
+								appMetadata={{
+									name: "SHAMBA LUV Token",
+									url: "https://shambaluv.com",
+								}}
+								detailsButton={{
+									displayBalanceToken: {
+										[DEFAULT_CHAIN.id]: SHAMBA_LUV_TOKEN.address,
+									},
+								}}
+								supportedTokens={{
+									[DEFAULT_CHAIN.id]: [
+										{
+											address: SHAMBA_LUV_TOKEN.address,
+											name: SHAMBA_LUV_TOKEN.name,
+											symbol: SHAMBA_LUV_TOKEN.symbol,
+											icon: SHAMBA_LUV_TOKEN.icon,
+										},
+									],
+								}}
+								theme="dark"
+								connectModal={{
+									size: "wide",
+								}}
+								connectButton={{
+									style: {
+										background: 'linear-gradient(45deg, #ff006e, #8338ec)',
+										border: 'none',
+										borderRadius: '8px',
+										padding: '8px 16px',
+										fontSize: '14px',
+										fontWeight: 'bold',
+										textTransform: 'uppercase',
+										letterSpacing: '0.5px',
+									}
+								}}
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+
 			{/* Social Icons - Top Right Corner */}
 			<div className="absolute top-6 right-6 z-50 flex space-x-4">
 				<a
@@ -551,9 +607,63 @@ function TrippyLandingPage() {
 						<h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
 							✨ Platform Features
 						</h2>
-						<p className="text-gray-300 text-lg">
-							Everything you need for the ultimate token experience
+						<p className="text-gray-300 text-lg mb-6">
+							CONNECT → to receive 1,000,000,000,000 LUV
 						</p>
+						<div className="flex justify-center mb-8">
+							<div className="relative">
+								<div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-600 rounded-xl blur-lg opacity-50 animate-pulse" />
+								<div className="relative bg-gradient-to-r from-pink-500 to-purple-600 p-1 rounded-xl hover:scale-105 transition-transform duration-300">
+									<div className="bg-black rounded-lg p-3">
+										<ConnectButton
+											client={client}
+											wallets={wallets}
+											chain={DEFAULT_CHAIN}
+											accountAbstraction={{
+												chain: DEFAULT_CHAIN,
+												factoryAddress: accountFactoryAddress,
+												sponsorGas: true,
+											}}
+											appMetadata={{
+												name: "SHAMBA LUV Token",
+												url: "https://shambaluv.com",
+											}}
+											detailsButton={{
+												displayBalanceToken: {
+													[DEFAULT_CHAIN.id]: SHAMBA_LUV_TOKEN.address,
+												},
+											}}
+											supportedTokens={{
+												[DEFAULT_CHAIN.id]: [
+													{
+														address: SHAMBA_LUV_TOKEN.address,
+														name: SHAMBA_LUV_TOKEN.name,
+														symbol: SHAMBA_LUV_TOKEN.symbol,
+														icon: SHAMBA_LUV_TOKEN.icon,
+													},
+												],
+											}}
+											theme="dark"
+											connectModal={{
+												size: "wide",
+											}}
+											connectButton={{
+												style: {
+													background: 'linear-gradient(45deg, #ff006e, #8338ec)',
+													border: 'none',
+													borderRadius: '10px',
+													padding: '12px 24px',
+													fontSize: '16px',
+													fontWeight: 'bold',
+													textTransform: 'uppercase',
+													letterSpacing: '0.5px',
+												}
+											}}
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
 					</div>
 					
 					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -616,6 +726,13 @@ function TrippyLandingPage() {
 						</div>
 						
 						<div className="bg-black/40 backdrop-blur-lg rounded-2xl p-6 border border-gray-500/30">
+							<h3 className="text-xl font-bold text-white mb-3">🌊 How does liquidity work?</h3>
+							<p className="text-gray-300">
+								Every time someone buys or sells SHAMBA LUV tokens, 1% of that transaction is automatically added to the liquidity pair increasing the value of LUV for all holders.
+							</p>
+						</div>
+						
+						<div className="bg-black/40 backdrop-blur-lg rounded-2xl p-6 border border-gray-500/30">
 							<h3 className="text-xl font-bold text-white mb-3">🏗️ Why Polygon Network?</h3>
 							<p className="text-gray-300">
 								Polygon offers lightning-fast transactions with extremely low fees (often under $0.01). 
@@ -634,8 +751,7 @@ function TrippyLandingPage() {
 						<div className="bg-black/40 backdrop-blur-lg rounded-2xl p-6 border border-gray-500/30">
 							<h3 className="text-xl font-bold text-white mb-3">🚀 How can I earn more tokens?</h3>
 							<p className="text-gray-300">
-								Simply hold your SHAMBA LUV tokens and earn automatic reflections from every transaction. 
-								You can also refer friends to claim their airdrop, growing the community and increasing trading volume!
+								Simply hold your SHAMBA LUV tokens and earn automatic reflections from every transaction. Once the Incentive Distributor is live you will be able to earn LUV by referring friends and participating in social network sharing as an Ambassador of LUV helping to grow the community and increasing trading volume!
 							</p>
 						</div>
 						
@@ -651,7 +767,14 @@ function TrippyLandingPage() {
 							<h3 className="text-xl font-bold text-white mb-3">💝 What's special about wallet-to-wallet transfers?</h3>
 							<p className="text-gray-300">
 								When you send SHAMBA LUV tokens directly to another wallet (not through an exchange), 
-								there are 0% fees! This encourages sharing and community growth - literally share the love!
+								there are 0% fees! This encourages sharing and community growth - literally share the LUV!
+							</p>
+						</div>
+						
+						<div className="bg-black/40 backdrop-blur-lg rounded-2xl p-6 border border-gray-500/30">
+							<h3 className="text-xl font-bold text-white mb-3">🌱 What is SHAMBA LUV?</h3>
+							<p className="text-gray-300">
+								SHAMBA means garden and LUV is a gesture. Hold LUV to earn LUV. Holding LUV is how LUV grows. Give the gesture of LUV to reward positive action. LUV is abundant. <strong>Phase 1 LUV is priceless. Phase 2 LUV presale. Phase 3 LUV finds value. Phase 4 global expansion. Phase 5 LUV is everywhere. Phase 6 LUV is the answer.</strong> You deserve LUV. Share the LUV.
 							</p>
 						</div>
 					</div>
