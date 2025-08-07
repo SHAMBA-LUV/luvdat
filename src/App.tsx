@@ -240,12 +240,15 @@ function TrippyLandingPage() {
 										background: 'linear-gradient(45deg, #ff006e, #8338ec)',
 										border: 'none',
 										borderRadius: '8px',
-										padding: '8px 16px',
-										fontSize: '14px',
-										fontWeight: 'bold',
+										padding: '10px 20px',
+										fontSize: '16px',
+										fontWeight: '800',
 										textTransform: 'uppercase',
-										letterSpacing: '0.5px',
-									}
+										letterSpacing: '1px',
+										fontFamily: 'Inter, system-ui, sans-serif',
+										boxShadow: '0 4px 15px rgba(255, 0, 110, 0.3)',
+									},
+									label: "LOGIN"
 								}}
 							/>
 						</div>
@@ -377,6 +380,66 @@ function TrippyLandingPage() {
 						</span>
 						<span className="inline-block animate-pulse">✨</span>
 					</div>
+					<div className="text-lg md:text-xl text-gray-300 mb-8">
+						<span>connect to collect 💰</span>
+					</div>
+					<div className="flex justify-center mb-8">
+						<div className="relative">
+							<div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-600 rounded-lg blur-md opacity-50 animate-pulse" />
+							<div className="relative bg-gradient-to-r from-pink-500 to-purple-600 p-0.5 rounded-lg hover:scale-105 transition-transform duration-300">
+								<div className="bg-black rounded-md p-2">
+									<ConnectButton
+										client={client}
+										wallets={wallets}
+										chain={DEFAULT_CHAIN}
+										accountAbstraction={{
+											chain: DEFAULT_CHAIN,
+											factoryAddress: accountFactoryAddress,
+											sponsorGas: true,
+										}}
+										appMetadata={{
+											name: "SHAMBA LUV Token",
+											url: "https://shambaluv.com",
+										}}
+										detailsButton={{
+											displayBalanceToken: {
+												[DEFAULT_CHAIN.id]: SHAMBA_LUV_TOKEN.address,
+											},
+										}}
+										supportedTokens={{
+											[DEFAULT_CHAIN.id]: [
+												{
+													address: SHAMBA_LUV_TOKEN.address,
+													name: SHAMBA_LUV_TOKEN.name,
+													symbol: SHAMBA_LUV_TOKEN.symbol,
+													icon: SHAMBA_LUV_TOKEN.icon,
+												},
+											],
+										}}
+										theme="dark"
+										connectModal={{
+											size: "wide",
+										}}
+																		connectButton={{
+									style: {
+										background: 'linear-gradient(45deg, #ff006e, #8338ec)',
+										border: 'none',
+										borderRadius: '6px',
+										padding: '8px 16px',
+										fontSize: '14px',
+										fontWeight: '800',
+										textTransform: 'uppercase',
+										letterSpacing: '0.8px',
+										fontFamily: 'Inter, system-ui, sans-serif',
+										boxShadow: '0 3px 10px rgba(255, 0, 110, 0.3)',
+									},
+									label: "COLLECT"
+								}}
+									/>
+								</div>
+							</div>
+						</div>
+					</div>
 				</div>
 
 				{/* Live Statistics */}
@@ -406,7 +469,7 @@ function TrippyLandingPage() {
 							💰 Token Economics
 						</h2>
 						<p className="text-gray-300 text-lg">
-							Built for holders with automatic rewards and community growth
+							Built for holders with automatic rewards and community growth. Hold LUV to watch LUV grow.
 						</p>
 					</div>
 					
@@ -487,12 +550,15 @@ function TrippyLandingPage() {
 										background: 'linear-gradient(45deg, #ff006e, #8338ec)',
 										border: 'none',
 										borderRadius: '12px',
-										padding: '16px 32px',
-										fontSize: '18px',
-										fontWeight: 'bold',
+										padding: '18px 36px',
+										fontSize: '20px',
+										fontWeight: '800',
 										textTransform: 'uppercase',
-										letterSpacing: '1px',
-									}
+										letterSpacing: '1.5px',
+										fontFamily: 'Inter, system-ui, sans-serif',
+										boxShadow: '0 6px 20px rgba(255, 0, 110, 0.4)',
+									},
+									label: "CLAIM"
 								}}
 							/>
 						</div>
@@ -647,18 +713,21 @@ function TrippyLandingPage() {
 											connectModal={{
 												size: "wide",
 											}}
-											connectButton={{
-												style: {
-													background: 'linear-gradient(45deg, #ff006e, #8338ec)',
-													border: 'none',
-													borderRadius: '10px',
-													padding: '12px 24px',
-													fontSize: '16px',
-													fontWeight: 'bold',
-													textTransform: 'uppercase',
-													letterSpacing: '0.5px',
-												}
-											}}
+																			connectButton={{
+									style: {
+										background: 'linear-gradient(45deg, #ff006e, #8338ec)',
+										border: 'none',
+										borderRadius: '10px',
+										padding: '14px 28px',
+										fontSize: '18px',
+										fontWeight: '800',
+										textTransform: 'uppercase',
+										letterSpacing: '1px',
+										fontFamily: 'Inter, system-ui, sans-serif',
+										boxShadow: '0 4px 15px rgba(255, 0, 110, 0.3)',
+									},
+									label: "CONNECT"
+								}}
 										/>
 									</div>
 								</div>
@@ -785,7 +854,10 @@ function TrippyLandingPage() {
 					<p className="text-xs text-gray-500">
 						By connecting your wallet, you agree to receive SHAMBA LUV tokens. 
 						Airdrop is limited to one per wallet address. Built on Polygon network.
-						Smart contract verified on PolygonScan. Not financial advice.
+						Smart contract verified on <a href="https://polygonscan.com/token/0x1035760d0f60b35b63660ac0774ef363eaa5456e" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">PolygonScan</a>. LUV is the answer. Share the LUV. Not financial advice.
+					</p>
+					<p className="text-xs text-gray-500 mt-2">
+						SHAMBA (c) 2025 LUV • luv@pythai.net
 					</p>
 				</div>
 			</div>
