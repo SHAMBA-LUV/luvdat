@@ -37,7 +37,7 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
     event TokensRescued(address indexed token, address indexed to, uint256 amount);
     event EmergencyWithdraw(address indexed token, address indexed to, uint256 amount);
     
-    constructor(address _defaultToken) {
+    constructor(address _defaultToken) Ownable(msg.sender) {
         require(_defaultToken != address(0), "Invalid default token address");
         defaultToken = IERC20(_defaultToken);
         
@@ -127,7 +127,14 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
         uint256 contractBalance,
         bool isActive
     ) {
-        return getAirdropStats(address(defaultToken));
+        AirdropConfig storage config = tokenConfigs[address(defaultToken)];
+        return (
+            config.amount,
+            config.totalClaimed,
+            config.totalRecipients,
+            IERC20(defaultToken).balanceOf(address(this)),
+            config.isActive
+        );
     }
     
     /**
@@ -149,7 +156,15 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
      * @dev Owner can update airdrop amount for the default token
      */
     function setAirdropAmount(uint256 _newAmount) external onlyOwner {
-        setAirdropConfig(address(defaultToken), _newAmount, true);
+        require(address(defaultToken) != address(0), "Invalid token address");
+        
+        AirdropConfig storage config = tokenConfigs[address(defaultToken)];
+        uint256 oldAmount = config.amount;
+        
+        config.amount = _newAmount;
+        config.isActive = true;
+        
+        emit AirdropConfigUpdated(address(defaultToken), oldAmount, _newAmount, true);
     }
     
     /**
@@ -167,7 +182,11 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
      * @dev Owner can deposit default tokens to the contract
      */
     function depositTokens(uint256 amount) external onlyOwner {
-        depositTokens(address(defaultToken), amount);
+        require(address(defaultToken) != address(0), "Invalid token address");
+        require(amount > 0, "Amount must be greater than 0");
+        
+        require(IERC20(defaultToken).transferFrom(msg.sender, address(this), amount), "Transfer failed");
+        emit TokensDeposited(address(defaultToken), msg.sender, amount);
     }
     
     /**
@@ -188,7 +207,14 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
      * @dev Owner can withdraw default tokens from the contract
      */
     function withdrawTokens(uint256 amount) external onlyOwner {
-        withdrawTokens(address(defaultToken), amount);
+        require(address(defaultToken) != address(0), "Invalid token address");
+        require(amount > 0, "Amount must be greater than 0");
+        
+        uint256 contractBalance = IERC20(defaultToken).balanceOf(address(this));
+        require(amount <= contractBalance, "Insufficient balance");
+        
+        require(IERC20(defaultToken).transfer(msg.sender, amount), "Transfer failed");
+        emit TokensWithdrawn(address(defaultToken), msg.sender, amount);
     }
     
     /**
@@ -208,7 +234,13 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
      * @dev Emergency withdraw all default tokens
      */
     function emergencyWithdraw() external onlyOwner {
-        emergencyWithdraw(address(defaultToken));
+        require(address(defaultToken) != address(0), "Invalid token address");
+        
+        uint256 contractBalance = IERC20(defaultToken).balanceOf(address(this));
+        if (contractBalance > 0) {
+            require(IERC20(defaultToken).transfer(msg.sender, contractBalance), "Transfer failed");
+            emit EmergencyWithdraw(address(defaultToken), msg.sender, contractBalance);
+        }
     }
     
     /**
@@ -253,7 +285,7 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
      * @dev Get default token balance
      */
     function getTokenBalance() external view returns (uint256) {
-        return getTokenBalance(address(defaultToken));
+        return IERC20(defaultToken).balanceOf(address(this));
     }
     
     /**
@@ -267,6 +299,6 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
      * @dev Check if default airdrop is active
      */
     function isAirdropActive() external view returns (bool) {
-        return isAirdropActive(address(defaultToken));
+        return tokenConfigs[address(defaultToken)].isActive;
     }
-}
+} 

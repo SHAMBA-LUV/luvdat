@@ -76,7 +76,7 @@ interface IUniswapV2Router02 {
  * @notice IMPLEMENTED: Reflection distribution to token holders with GAS OPTIMIZATION
  * @notice Wallet-to-wallet transfers are fee-free share the LUV
  */
-contract LUV100Q is ERC20, Ownable, ReentrancyGuard {
+contract SHAMBALUV is ERC20, Ownable, ReentrancyGuard {
     using Address for address payable;
 
     // ============ CONSTANTS ============
