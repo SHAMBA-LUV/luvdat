@@ -29,8 +29,15 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
     // Track who has already claimed per token
     mapping(address => mapping(address => bool)) public hasClaimed;
     
+    // Track who has already claimed loyalty rewards per token
+    mapping(address => mapping(address => bool)) public hasClaimedLoyalty;
+    
+    // Loyalty reward amount (same as regular airdrop)
+    uint256 public loyaltyRewardAmount;
+    
     // Events
     event AirdropClaimed(address indexed token, address indexed recipient, uint256 amount);
+    event LoyaltyRewardClaimed(address indexed token, address indexed recipient, uint256 amount);
     event AirdropConfigUpdated(address indexed token, uint256 oldAmount, uint256 newAmount, bool isActive);
     event TokensDeposited(address indexed token, address indexed from, uint256 amount);
     event TokensWithdrawn(address indexed token, address indexed to, uint256 amount);
@@ -42,12 +49,18 @@ contract ShambaLuvAirdrop is Ownable, ReentrancyGuard {
         defaultToken = IERC20(_defaultToken);
         
         // Set default configuration for the main token
+        // 1 trillion LUV tokens = 1,000,000,000,000 tokens
+        // This represents only 0.001% of the total supply (100 quadrillion)
+        // Total airdrop pool: 3 quadrillion tokens for up to 3000 participants
         tokenConfigs[_defaultToken] = AirdropConfig({
-            amount: 1_000_000_000_000 * 1e18, // 1 trillion tokens
+            amount: 1_000_000_000_000 * 1e18, // 1 trillion tokens (0.001% of total supply)
             isActive: true,
             totalClaimed: 0,
             totalRecipients: 0
         });
+        
+        // Set loyalty reward amount (same as regular airdrop)
+        loyaltyRewardAmount = 1_000_000_000_000 * 1e18; // 1 trillion tokens
     }
     
     /**

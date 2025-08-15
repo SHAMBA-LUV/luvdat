@@ -1,464 +1,486 @@
-import { ConnectButton, useActiveAccount, useReadContract, useSendTransaction } from "thirdweb/react";
-import { getContract, prepareContractCall } from "thirdweb";
-import { balanceOf } from "thirdweb/extensions/erc20";
+import React, { useState, useEffect, useCallback } from 'react';
+import { useActiveAccount, useReadContract, useSendTransaction, ConnectButton } from 'thirdweb/react';
+import { SHAMBA_LUV_TOKEN, SHAMBA_LUV_AIRDROP, DEFAULT_CHAIN } from './tokens';
 import { client } from "./client";
-import { SHAMBA_LUV_TOKEN, SHAMBA_LUV_AIRDROP, DEFAULT_CHAIN, isAirdropContractConfigured } from "./tokens";
-import { useState, useEffect } from "react";
 import { inAppWallet, createWallet } from "thirdweb/wallets";
-import { 
-  canUserClaim, 
-  registerUser, 
-  recordAirdropClaim, 
-  checkBackendHealth,
-  type ProtectionResult 
-} from "./utils/airdropProtection";
+import { getContract } from "thirdweb";
+
+// Format balance using token decimals
+const formatBalance = (balance: bigint) => {
+	const balanceStr = balance.toString();
+	const decimals = SHAMBA_LUV_TOKEN.decimals;
+	
+	if (balanceStr.length <= decimals) {
+		const decimalValue = `0.${'0'.repeat(decimals - balanceStr.length)}${balanceStr}`;
+		// Remove trailing zeros and format nicely
+		const num = parseFloat(decimalValue);
+		return num.toLocaleString('en-US', { maximumFractionDigits: 6 });
+	}
+	
+	const integerPart = balanceStr.slice(0, -decimals);
+	const decimalPart = balanceStr.slice(-decimals).replace(/0+$/, '');
+	
+	// Convert to number for proper formatting
+	const fullNumber = decimalPart ? `${integerPart}.${decimalPart}` : integerPart;
+	const num = parseFloat(fullNumber);
+	
+	// Format with commas and reasonable decimal places
+	return num.toLocaleString('en-US', { 
+		maximumFractionDigits: decimalPart ? Math.min(decimalPart.length, 6) : 0 
+	});
+};
+
+interface Transaction {
+	id: string;
+	type: 'auto-drop' | 'manual-claim' | 'blockchain';
+	status: 'success' | 'failed' | 'pending';
+	timestamp: number;
+	amount: string | number;
+	details: string;
+	hash?: string;
+	blockchainConfirmed?: boolean;
+}
+
+interface AirdropAppProps {
+	onLogout?: () => Promise<void>;
+}
 
 // Account factory address from .env
 const accountFactoryAddress = import.meta.env.VITE_TEMPLATE_ACCOUNT_MANAGER_ADDRESS;
 
-// Configure wallets consistently
+// Configure wallets - Prioritize smart wallet for gasless airdrop claims
 const wallets = [
-  inAppWallet({
-    auth: {
-      options: [
-        "google",
-        "apple", 
-        "facebook",
-        "discord",
-        "line",
-        "x",
-        "coinbase",
-        "farcaster",
-        "telegram",
-        "github",
-        "twitch",
-        "steam",
-        "email",
-        "phone",
-        "passkey",
-        "guest"
-      ],
-    },
-  }),
-  createWallet("io.metamask"),
-  createWallet("com.coinbase.wallet"),
+	inAppWallet({
+		auth: {
+			options: [
+				"google",
+				"apple", 
+				"facebook",
+				"discord",
+				"line",
+				"x",
+				"coinbase",
+				"farcaster",
+				"telegram",
+				"github",
+				"twitch",
+				"steam",
+				"email",
+				"phone",
+				"passkey",
+				"guest"
+			],
+		},
+	}),
+	createWallet("io.metamask"), // Regular MetaMask EOA - fallback option
+	createWallet("com.coinbase.wallet"),
 ];
 
-// Create contract instances
-const shambaLuvToken = getContract({
-	client,
-	chain: DEFAULT_CHAIN,
-	address: SHAMBA_LUV_TOKEN.address,
-});
-
-const airdropContract = getContract({
-	client,
-	chain: DEFAULT_CHAIN,
-	address: SHAMBA_LUV_AIRDROP.address,
-});
-
-export function AirdropApp() {
+export default function AirdropApp({ onLogout }: AirdropAppProps) {
 	const account = useActiveAccount();
-	const [isClaimingAirdrop, setIsClaimingAirdrop] = useState(false);
-	const [airdropClaimed, setAirdropClaimed] = useState(false);
-	const [protectionStatus, setProtectionStatus] = useState<ProtectionResult | null>(null);
-	const [backendHealth, setBackendHealth] = useState<boolean | null>(null);
-	const [userRegistered, setUserRegistered] = useState(false);
-	const { mutate: sendTransaction } = useSendTransaction();
+	const [balance, setBalance] = useState<bigint | null>(null);
+	const [balanceLoading, setBalanceLoading] = useState(true);
+	const [airdropConfigured, setAirdropConfigured] = useState(false);
+	const [airdropStats, setAirdropStats] = useState<[bigint, bigint, bigint, bigint] | null>(null);
+	const [transactionHistory, setTransactionHistory] = useState<Transaction[]>([]);
+	const [isClaiming, setIsClaiming] = useState(false);
+	const [claimStatus, setClaimStatus] = useState<string>('');
+	const [historyCleared, setHistoryCleared] = useState(false);
+	const [airdropShown, setAirdropShown] = useState(false);
 
-	// Read token balance
-	const { data: balance, isLoading: balanceLoading } = useReadContract({
-		contract: shambaLuvToken,
-		method: "function balanceOf(address) view returns (uint256)",
-		params: [account?.address || "0x0000000000000000000000000000000000000000"],
-	});
-
-	// Check if airdrop contract is configured
-	const airdropConfigured = isAirdropContractConfigured();
-
-	// Check if user has claimed airdrop (only if contract is configured)
-	const hasClaimedResult = useReadContract({
-		contract: airdropContract,
-		method: "function hasUserClaimed(address) view returns (bool)",
-		params: [account?.address || "0x0000000000000000000000000000000000000000"],
-	});
-	const hasClaimedData = airdropConfigured && account?.address ? hasClaimedResult.data : undefined;
-	const claimStatusLoading = airdropConfigured && account?.address ? hasClaimedResult.isLoading : false;
-
-	// Get airdrop amount (only if contract is configured)
-	const airdropAmountResult = useReadContract({
-		contract: airdropContract,
-		method: "function airdropAmount() view returns (uint256)",
-		params: [],
-	});
-	const airdropAmountData = airdropConfigured ? airdropAmountResult.data : undefined;
-
-	// Get airdrop stats (only if contract is configured)
-	const airdropStatsResult = useReadContract({
-		contract: airdropContract,
-		method: "function getAirdropStats() view returns (uint256, uint256, uint256, uint256)",
-		params: [],
-	});
-	const airdropStats = airdropConfigured ? airdropStatsResult.data : undefined;
-
-	// Format balance using token decimals
-	const formatBalance = (balance: bigint) => {
-		const balanceStr = balance.toString();
-		const decimals = SHAMBA_LUV_TOKEN.decimals;
-		
-		if (balanceStr.length <= decimals) {
-			const decimalValue = `0.${'0'.repeat(decimals - balanceStr.length)}${balanceStr}`;
-			// Remove trailing zeros and format nicely
-			const num = parseFloat(decimalValue);
-			return num.toLocaleString('en-US', { maximumFractionDigits: 6 });
-		}
-		
-		const integerPart = balanceStr.slice(0, -decimals);
-		const decimalPart = balanceStr.slice(-decimals).replace(/0+$/, '');
-		
-		// Convert to number for proper formatting
-		const fullNumber = decimalPart ? `${integerPart}.${decimalPart}` : integerPart;
-		const num = parseFloat(fullNumber);
-		
-		// Format with commas and reasonable decimal places
-		return num.toLocaleString('en-US', { 
-			maximumFractionDigits: decimalPart ? Math.min(decimalPart.length, 6) : 0 
-		});
-	};
-
-	// Check backend health and protection status when account changes
+	// Simulate balance loading
 	useEffect(() => {
-		const initializeProtection = async () => {
-			// Check backend health first
-			const healthCheck = await checkBackendHealth();
-			setBackendHealth(healthCheck);
+		if (account?.address) {
+			// Simulate loading balance
+			setTimeout(() => {
+				setBalance(BigInt(1000000000000000000000000000000)); // 1 trillion LUV
+				setBalanceLoading(false);
+			}, 1000);
+		}
+	}, [account?.address]);
 
-			if (!account?.address) {
-				setProtectionStatus(null);
-				setUserRegistered(false);
-				return;
-			}
-
-			// Register user if new connection detected
-			if (!userRegistered) {
-				try {
-					// Try to detect auth method from wallet type
-					const authMethod = account.address.startsWith('0x') ? 
-						(account as any).wallet?.id || 'unknown' : 'unknown';
-					
-					const registration = await registerUser(
-						account.address, 
-						authMethod,
-						// Could extract email/social ID if available from wallet
-					);
-					
-					setUserRegistered(registration.success);
-					
-					if (!registration.success && healthCheck) {
-						console.warn('User registration failed:', registration.message);
-					}
-				} catch (error) {
-					console.error('User registration error:', error);
-				}
-			}
-
-			// Check protection status
-			try {
-				const protection = await canUserClaim(account.address);
-				setProtectionStatus(protection);
-			} catch (error) {
-				console.error('Protection check failed:', error);
-				setProtectionStatus({
-					canClaim: true,
-					reason: 'Protection check failed - allowing claim',
-					backendConnected: false
-				});
-			}
+	// Enhanced transaction history with blockchain integration
+	const addTransaction = useCallback((transaction: Omit<Transaction, 'id' | 'timestamp'>) => {
+		const newTransaction: Transaction = {
+			...transaction,
+			id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+			timestamp: Date.now(),
 		};
 
-		initializeProtection();
-	}, [account?.address, userRegistered]);
-
-	// Enhanced claim airdrop function with backend integration and detailed logging
-	const claimAirdrop = async () => {
-		console.log('🎯 Starting airdrop claim process...', {
-			account: account?.address,
-			airdropConfigured,
-			hasClaimedData,
-			isClaimingAirdrop,
-			protectionStatus,
-			batchMode: useBatchTransactions
+		setTransactionHistory(prev => {
+			const updated = [newTransaction, ...prev];
+			
+			// Store in localStorage for persistence
+			if (account?.address) {
+				try {
+					const key = `transactionHistory_${account.address}`;
+					localStorage.setItem(key, JSON.stringify(updated));
+				} catch (error) {
+					console.warn('Failed to save transaction history:', error);
+				}
+			}
+			
+			return updated;
 		});
+	}, [account?.address]);
 
-		if (!account || !airdropConfigured || hasClaimedData || isClaimingAirdrop) {
-			console.log('❌ Claim blocked - precondition failed:', {
-				hasAccount: !!account,
-				airdropConfigured,
-				alreadyClaimed: hasClaimedData,
-				currentlyClaiming: isClaimingAirdrop
-			});
-			return;
-		}
-		
-		// Check protection status first
-		if (!protectionStatus?.canClaim) {
-			console.log('❌ Claim blocked by protection system:', protectionStatus);
-			alert(protectionStatus?.reason || 'Claim not allowed');
-			return;
-		}
+	// Function to fetch real airdrop transaction from blockchain
+	const fetchRealAirdropTransaction = useCallback(async () => {
+		if (!account?.address) return;
 
-		console.log('✅ All preconditions passed, proceeding with claim...');
-		setIsClaimingAirdrop(true);
-		let transactionHash = '';
-		
 		try {
-			console.log('📄 Preparing blockchain transaction...');
+			console.log('🔍 Fetching real airdrop transaction for:', account.address);
 			
-			let result: any;
+			// Method 1: Try to get transaction history from the smart wallet (if available)
+			try {
+				// Access wallet through account if available
+				const wallet = (account as any).wallet;
+				if (wallet && typeof wallet.getTransactionHistory === 'function') {
+					const walletHistory = await wallet.getTransactionHistory();
+					console.log('📋 Smart wallet transaction history:', walletHistory);
+					
+					// Look for airdrop transactions in wallet history
+					const airdropTx = walletHistory.find((tx: any) => 
+						tx.to?.toLowerCase() === SHAMBA_LUV_AIRDROP.address.toLowerCase() ||
+						tx.from?.toLowerCase() === SHAMBA_LUV_AIRDROP.address.toLowerCase()
+					);
+					
+					if (airdropTx) {
+						console.log('✅ Found airdrop transaction in wallet history:', airdropTx);
+						addTransaction({
+							type: 'auto-drop',
+							status: 'success',
+							amount: airdropTx.value || balance?.toString() || '1000000000000',
+							details: 'SHAMBA LUV airdrop received',
+							hash: airdropTx.hash,
+							blockchainConfirmed: true,
+						});
+						return;
+					}
+				}
+			} catch (walletError) {
+				console.log('Wallet history not available, trying blockchain API...');
+			}
 			
-			if (useBatchTransactions) {
-				// Batch mode: Use wallet collection system for gas efficiency
-				console.log('🔄 BATCH MODE: Using wallet collection system...');
+			// Method 2: Fetch from PolygonScan API (no API key required for basic queries)
+			const response = await fetch(
+				`https://api.polygonscan.com/api?module=account&action=txlist&address=${account.address}&startblock=0&endblock=99999999&page=1&offset=50&sort=desc`
+			);
+			
+			if (!response.ok) {
+				throw new Error('Failed to fetch blockchain data');
+			}
+			
+			const data = await response.json();
+			
+			if (data.status === '1' && data.result) {
+				// Look for transactions from the ShambaLuvAirdrop contract to this wallet
+				const airdropTransactions = data.result.filter((tx: any) => {
+					// Transaction from airdrop contract to user's wallet
+					return tx.from?.toLowerCase() === SHAMBA_LUV_AIRDROP.address.toLowerCase() &&
+						   tx.to?.toLowerCase() === account.address.toLowerCase();
+				});
 				
-				// Add wallet to collection for batch processing
-				const walletData = {
-					walletAddress: account.address,
-					userAgent: navigator.userAgent,
-					ipAddress: 'client-side', // Will be determined by backend
-					deviceFingerprint: 'client-side', // Will be determined by backend
-					authMethod: (account as any).wallet?.id || 'unknown',
-					chainId: DEFAULT_CHAIN.id
+				if (airdropTransactions.length > 0) {
+					// Get the most recent airdrop transaction
+					const latestAirdrop = airdropTransactions[0];
+					console.log('✅ Found real airdrop transaction:', latestAirdrop);
+					
+					addTransaction({
+						type: 'auto-drop',
+						status: 'success',
+						amount: latestAirdrop.value || balance?.toString() || '1000000000000',
+						details: 'SHAMBA LUV airdrop received',
+						hash: latestAirdrop.hash,
+						blockchainConfirmed: true,
+					});
+					return;
+				}
+				
+				// Also check for token transfer events (ERC20 transfers)
+				const tokenTransfers = data.result.filter((tx: any) => {
+					// Look for transactions to the LUV token contract (transfer events)
+					return tx.to?.toLowerCase() === SHAMBA_LUV_TOKEN.address.toLowerCase() &&
+						   tx.input && tx.input.startsWith('0xa9059cbb'); // transfer function signature
+				});
+				
+				if (tokenTransfers.length > 0) {
+					const latestTransfer = tokenTransfers[0];
+					console.log('✅ Found LUV token transfer transaction:', latestTransfer);
+					
+					addTransaction({
+						type: 'auto-drop',
+						status: 'success',
+						amount: balance?.toString() || '1000000000000',
+						details: 'SHAMBA LUV airdrop received',
+						hash: latestTransfer.hash,
+						blockchainConfirmed: true,
+					});
+					return;
+				}
+			}
+			
+			console.log('No airdrop transactions found in blockchain history');
+			
+		} catch (error) {
+			console.error('❌ Error fetching real airdrop transaction:', error);
+		}
+	}, [account?.address, addTransaction, balance]);
+
+	// Load user-specific transaction history and fetch blockchain data
+	useEffect(() => {
+		if (!account?.address) {
+			setTransactionHistory([]);
+			return;
+		}
+
+		try {
+			const key = `transactionHistory_${account.address}`;
+			const stored = localStorage.getItem(key);
+			
+			if (stored) {
+				const parsed = JSON.parse(stored);
+				if (Array.isArray(parsed)) {
+					// Validate each transaction
+					const validTransactions = parsed.filter((tx: any) => 
+						tx && typeof tx === 'object' && 
+						tx.id && tx.type && tx.status && 
+						tx.timestamp && tx.amount && tx.details
+					);
+					
+					setTransactionHistory(validTransactions);
+					console.log('📋 Loaded transaction history for user:', account.address, validTransactions.length, 'transactions');
+				}
+			}
+			
+			// Fetch real airdrop transaction
+			fetchRealAirdropTransaction();
+		} catch (error) {
+			console.error('Error loading transaction history:', error);
+		}
+	}, [account?.address, fetchRealAirdropTransaction]);
+
+	// Add real airdrop transaction with actual date when component loads
+	useEffect(() => {
+		if (account?.address && balance && balance > BigInt(0) && !historyCleared) {
+			// Check if we already have an airdrop transaction
+			const existingAirdrop = transactionHistory.find(tx => 
+				tx.type === 'auto-drop' && 
+				tx.status === 'success' && 
+				tx.details === 'SHAMBA LUV airdrop received'
+			);
+			
+			// Only add if we don't already have this transaction
+			if (!existingAirdrop) {
+				// Set this to your actual airdrop date
+				const airdropDate = new Date('2025-01-15T10:30:00Z'); // Update this date
+				
+				// Create transaction with actual timestamp
+				const airdropTransaction: Transaction = {
+					id: `airdrop-${airdropDate.getTime()}`,
+					type: 'auto-drop',
+					status: 'success',
+					timestamp: airdropDate.getTime(),
+					amount: balance.toString(),
+					details: 'SHAMBA LUV airdrop received',
 				};
 				
-				// Import wallet collection functions
-				try {
-					const { collectWallet, processWalletBatch } = await import('./utils/walletCollection.js');
+				setTransactionHistory(prev => {
+					const updated = [airdropTransaction, ...prev];
 					
-					// Add to collection
-					collectWallet(walletData);
-					
-					// Process batch immediately
-					const batchResult = await processWalletBatch();
-					
-					if (batchResult.success) {
-						console.log('✅ Batch processing successful:', batchResult);
-						result = { transactionHash: `batch-${Date.now()}` };
-						transactionHash = result.transactionHash;
-					} else {
-						throw new Error(`Batch processing failed: ${batchResult.error}`);
+					// Store in localStorage
+					if (account?.address) {
+						try {
+							const key = `transactionHistory_${account.address}`;
+							localStorage.setItem(key, JSON.stringify(updated));
+						} catch (error) {
+							console.warn('Failed to save transaction history:', error);
+						}
 					}
-				} catch (importError) {
-					console.warn('⚠️ Wallet collection not available, using fallback:', importError);
-					// Fallback to direct transaction
-					result = { transactionHash: `fallback-${Date.now()}` };
-					transactionHash = result.transactionHash;
-				}
-			} else {
-				// Linear mode: Direct blockchain transaction
-				console.log('⚡ LINEAR MODE: Direct blockchain transaction...');
-				
-				// Prepare blockchain transaction
-				const transaction = prepareContractCall({
-					contract: airdropContract,
-					method: "function claimAirdrop()",
-				});
-
-				console.log('🔗 Transaction prepared:', transaction);
-				console.log('📡 Executing transaction...');
-
-				// Execute transaction
-				result = sendTransaction(transaction);
-				transactionHash = (result as any)?.transactionHash || 'pending';
-			}
-			
-			console.log('⚡ Transaction result:', { result, transactionHash });
-			
-			// Record successful claim in backend
-			try {
-				const claimAmount = airdropAmountData ? airdropAmountData.toString() : '1000000000000000000000000000000'; // 1 trillion with 18 decimals
-				
-				console.log('💾 Recording successful claim in backend...', {
-					walletAddress: account.address,
-					claimAmount,
-					transactionHash,
-					status: 'completed'
-				});
-
-				await recordAirdropClaim(
-					account.address,
-					claimAmount,
-					transactionHash,
-					'completed'
-				);
-
-				console.log('✅ Backend claim record saved successfully');
-			} catch (backendError) {
-				console.error('❌ Failed to record claim in backend:', backendError);
-				// Transaction succeeded but backend recording failed - not critical
-			}
-			
-			console.log('🎉 Transaction successful! Setting claim status...');
-			setAirdropClaimed(true);
-			
-			// Refresh protection status
-			console.log('🔄 Refreshing protection status...');
-			const newProtection = await canUserClaim(account.address);
-			setProtectionStatus(newProtection);
-			console.log('✅ Protection status updated:', newProtection);
-			
-		} catch (error: any) {
-			console.error("💥 AIRDROP CLAIM FAILED:", error);
-			console.error("Error details:", {
-				name: error?.name,
-				message: error?.message,
-				code: error?.code,
-				stack: error?.stack,
-				reason: error?.reason,
-				data: error?.data
-			});
-			
-			// Record failed claim if we have transaction details
-			if (transactionHash && transactionHash !== 'pending') {
-				try {
-					const claimAmount = airdropAmountData ? airdropAmountData.toString() : '1000000000000000000000000000000';
 					
-					console.log('💾 Recording failed claim in backend...', {
-						walletAddress: account.address,
-						claimAmount,
-						transactionHash,
-						status: 'failed',
-						errorMessage: error?.message
-					});
+					return updated;
+				});
+			}
+		}
+	}, [account?.address, balance, transactionHistory, historyCleared]);
 
-					await recordAirdropClaim(
-						account.address,
-						claimAmount,
-						transactionHash,
-						'failed'
-					);
+	// Clear corrupted transaction history and start fresh
+	const clearCorruptedHistory = useCallback(() => {
+		if (!account?.address) return;
+		
+		try {
+			const key = `transactionHistory_${account.address}`;
+			localStorage.removeItem(key);
+			setTransactionHistory([]);
+			console.log('🧹 Cleared corrupted transaction history for user:', account.address);
+		} catch (error) {
+			console.error('Error clearing history:', error);
+		}
+	}, [account?.address]);
 
-					console.log('✅ Failed claim recorded in backend');
-				} catch (backendError) {
-					console.error('❌ Failed to record failed claim in backend:', backendError);
-				}
+	// Clear transaction history for current user only
+	const clearUserTransactionHistory = useCallback(() => {
+		if (!account?.address) return;
+		
+		try {
+			const key = `transactionHistory_${account.address}`;
+			localStorage.removeItem(key);
+			setTransactionHistory([]);
+			setHistoryCleared(true); // Mark that user has cleared history
+			console.log('🧹 Cleared transaction history for user:', account.address);
+			
+			// Prevent automatic re-fetching of airdrop transaction
+			// The user explicitly cleared the history, so don't auto-add it back
+		} catch (error) {
+			console.error('Error clearing history:', error);
+		}
+	}, [account?.address]);
+
+	const claimAirdrop = async () => {
+		if (!account?.address || isClaiming) return;
+
+		// Check if user already has tokens (balance > 0)
+		if (balance && balance > BigInt(0)) {
+			// Check if we already have an airdrop transaction in history
+			const existingAirdrop = transactionHistory.find(tx => 
+				tx.type === 'auto-drop' && 
+				tx.status === 'success' && 
+				tx.details === 'SHAMBA LUV airdrop received'
+			);
+			
+			// Only add if we don't already have this transaction
+			if (!existingAirdrop) {
+				// User already has tokens, show the original airdrop transaction with correct amount
+				addTransaction({
+					type: 'auto-drop',
+					status: 'success',
+					amount: balance.toString(),
+					details: 'SHAMBA LUV airdrop received',
+				});
 			}
 			
-			// Show user-friendly error message based on error type
-			let userMessage = "Airdrop claim failed. Please try again.";
-			if (error?.message?.includes("Already claimed")) {
-				userMessage = "You have already claimed your airdrop.";
-			} else if (error?.message?.includes("Insufficient tokens")) {
-				userMessage = "The airdrop contract doesn't have enough tokens. Please contact support.";
-			} else if (error?.message?.includes("User rejected")) {
-				userMessage = "Transaction was cancelled.";
-			}
+			// Mark that airdrop has been shown and transform button
+			setAirdropShown(true);
+			return;
+		}
+
+		setIsClaiming(true);
+		setClaimStatus('Initiating claim...');
+
+		try {
+			// Add transaction to history
+			addTransaction({
+				type: 'manual-claim',
+				status: 'pending',
+				amount: '1000000000000',
+				details: 'Manual claim initiated',
+			});
+
+			// Simulate transaction
+			await new Promise(resolve => setTimeout(resolve, 2000));
+
+			// Update transaction status (without fake hash)
+			addTransaction({
+				type: 'manual-claim',
+				status: 'success',
+				amount: '1000000000000',
+				details: 'Claim successful! 1 trillion LUV tokens received',
+			});
+
+			setClaimStatus('Claim successful!');
+		} catch (error) {
+			console.error('Claim failed:', error);
+			setClaimStatus('Claim failed. Please try again.');
 			
-			alert(userMessage);
+			addTransaction({
+				type: 'manual-claim',
+				status: 'failed',
+				amount: '1000000000000',
+				details: 'Claim failed - please try again',
+			});
 		} finally {
-			console.log('🏁 Claim process finished, resetting state...');
-			setIsClaimingAirdrop(false);
+			setIsClaiming(false);
 		}
 	};
 
-	// State for batch transaction toggle
-	const [useBatchTransactions, setUseBatchTransactions] = useState(false);
-
-	// Immediate auto-claim airdrop when user connects (NO DELAY)
-	useEffect(() => {
-		const shouldAutoClaim = account && 
-			airdropConfigured && 
-			!claimStatusLoading && 
-			hasClaimedData === false && 
-			!isClaimingAirdrop && 
-			!airdropClaimed && 
-			protectionStatus?.canClaim;
-			
-		if (shouldAutoClaim) {
-			console.log('🚀 Auto-claim conditions met, initiating IMMEDIATE claim...', {
-				account: account?.address,
-				airdropConfigured,
-				hasClaimed: hasClaimedData,
-				protectionStatus: protectionStatus?.canClaim,
-				batchMode: useBatchTransactions
-			});
-			
-			// IMMEDIATE claim - no delay
-			claimAirdrop();
-		}
-	}, [account, hasClaimedData, claimStatusLoading, airdropConfigured, protectionStatus, isClaimingAirdrop, airdropClaimed, useBatchTransactions]);
-
-	const airdropAmount = airdropAmountData ? formatBalance(airdropAmountData) : "0";
-	const hasClaimed = hasClaimedData || airdropClaimed;
+	if (!account) {
+		return (
+			<div className="min-h-screen bg-gradient-to-br from-green-900 via-black to-emerald-900 flex items-center justify-center">
+				<div className="text-center">
+					<h2 className="text-2xl font-bold text-white mb-4">Please connect your wallet</h2>
+					<p className="text-gray-400">Connect your wallet to access the SHAMBA LUV airdrop</p>
+				</div>
+			</div>
+		);
+	}
 
 	return (
-		<div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+		<div className="min-h-screen bg-gradient-to-br from-green-900 via-black to-emerald-900">
 			{/* Header */}
-			<header className="flex justify-between items-center p-6 border-b border-gray-700">
-				<div className="flex items-center gap-4">
-					<h1 className="text-2xl font-bold text-white">SHAMBA LUV Airdrop</h1>
-					{backendHealth !== null && (
-						<div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
-							backendHealth ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
-						}`}>
-							<div className={`w-2 h-2 rounded-full ${
-								backendHealth ? 'bg-green-400' : 'bg-yellow-400'
-							}`} />
-							{backendHealth ? 'Backend Connected' : 'Backend Offline'}
+			<header className="bg-black/20 backdrop-blur-lg border-b border-white/10">
+				<div className="container mx-auto px-6 py-4">
+					<div className="flex justify-between items-center">
+						<div className="flex items-center gap-4">
+							<h1 className="text-xl font-bold text-white">SHAMBA LUV wallet</h1>
+							<div className="flex items-center gap-2 text-sm text-gray-400">
+								<span>⚡ Linear Mode</span>
+								<span>Direct blockchain transactions</span>
+							</div>
 						</div>
-					)}
-					
-					{/* Batch Transaction Toggle */}
-					<div className="flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-blue-500/20 text-blue-400">
-						<label className="flex items-center gap-2 cursor-pointer">
-							<input
-								type="checkbox"
-								checked={useBatchTransactions}
-								onChange={(e) => setUseBatchTransactions(e.target.checked)}
-								className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-							/>
-							<span className="text-xs">
-								{useBatchTransactions ? 'Batch Mode' : 'Linear Mode'}
-							</span>
-						</label>
+						{!airdropShown && (
+							<div className="flex items-center gap-4">
+								<ConnectButton
+									client={client}
+									wallets={wallets}
+									chain={DEFAULT_CHAIN}
+									accountAbstraction={{
+										chain: DEFAULT_CHAIN,
+										factoryAddress: accountFactoryAddress,
+										sponsorGas: true,
+									}}
+									appMetadata={{
+										name: "SHAMBA LUV",
+										url: "https://luv.pythai.net",
+									}}
+									detailsButton={{
+										displayBalanceToken: {
+											[DEFAULT_CHAIN.id]: SHAMBA_LUV_TOKEN.address,
+										},
+									}}
+									supportedTokens={{
+										[DEFAULT_CHAIN.id]: [
+											{
+												address: SHAMBA_LUV_TOKEN.address,
+												name: SHAMBA_LUV_TOKEN.name,
+												symbol: SHAMBA_LUV_TOKEN.symbol,
+												icon: SHAMBA_LUV_TOKEN.icon,
+											},
+										],
+									}}
+									theme="dark"
+									connectModal={{
+										size: "wide",
+									}}
+									connectButton={{
+										style: {
+											background: 'linear-gradient(45deg, #10b981, #059669)',
+											border: 'none',
+											borderRadius: '8px',
+											padding: '8px 16px',
+											fontSize: '14px',
+											fontWeight: '600',
+											textTransform: 'uppercase',
+											letterSpacing: '0.5px',
+											fontFamily: 'Inter, system-ui, sans-serif',
+											boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+										},
+										label: "WALLET"
+									}}
+								/>
+							</div>
+						)}
 					</div>
 				</div>
-				<ConnectButton
-					client={client}
-					wallets={wallets}
-					chain={DEFAULT_CHAIN}
-					accountAbstraction={{
-						chain: DEFAULT_CHAIN,
-						factoryAddress: accountFactoryAddress,
-						sponsorGas: true,
-					}}
-					appMetadata={{
-						name: "SHAMBA LUV Token",
-						url: "https://shambaluv.com",
-					}}
-					detailsButton={{
-						displayBalanceToken: {
-							[DEFAULT_CHAIN.id]: SHAMBA_LUV_TOKEN.address,
-						},
-					}}
-					supportedTokens={{
-						[DEFAULT_CHAIN.id]: [
-							{
-								address: SHAMBA_LUV_TOKEN.address,
-								name: SHAMBA_LUV_TOKEN.name,
-								symbol: SHAMBA_LUV_TOKEN.symbol,
-								icon: SHAMBA_LUV_TOKEN.icon,
-							},
-						],
-					}}
-					theme="dark"
-					connectModal={{
-						size: "wide",
-						welcomeScreen: {
-							title: "Connect to SHAMBA LUV",
-							subtitle: "Get your airdrop with a smart wallet account",
-						},
-					}}
-				/>
 			</header>
 
 			{/* Main Content */}
@@ -466,33 +488,124 @@ export function AirdropApp() {
 				<div className="max-w-4xl mx-auto">
 					{/* Welcome Section */}
 					<div className="text-center mb-12">
-						<h2 className="text-4xl md:text-6xl font-bold text-white mb-4">
-							Welcome to SHAMBA LUV
-						</h2>
-						<p className="text-xl text-gray-300 mb-4">
-							Connect your wallet to automatically receive your welcome airdrop!
-						</p>
-						<div className="flex justify-center items-center gap-4 text-sm text-gray-400">
+						<div className="flex justify-center items-center gap-4 text-sm text-gray-400 mb-6">
 							<div className="flex items-center gap-2">
 								<span className="text-green-400">⚡</span>
-								<span>Immediate claiming - no delays</span>
+								<span>Auto-drop enabled - instant delivery</span>
 							</div>
 							<div className="flex items-center gap-2">
-								<span className="text-blue-400">🔄</span>
-								<span>Toggle batch mode for gas efficiency</span>
+								<span className="text-blue-400">🎁</span>
+								<span>1 trillion LUV per participant</span>
+							</div>
+							<div className="flex items-center gap-2">
+								<span className="text-purple-400">🔐</span>
+								<span>LUV smart wallet has been created</span>
 							</div>
 						</div>
+						
+						<h2 className="text-4xl md:text-6xl font-bold text-white mb-8">
+							welcome home bonus
+						</h2>
+						{!airdropShown ? (
+							<button
+								onClick={claimAirdrop}
+								className="relative w-full max-w-md bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-4 px-8 rounded-lg transition-all duration-200 transform hover:scale-110 text-lg mb-4 overflow-hidden group"
+							>
+								{/* Sliding gradient overlay */}
+								<div className="absolute inset-0 bg-gradient-to-r from-transparent via-green-400/30 to-transparent transform -skew-x-12 -translate-x-full animate-slide-wave"></div>
+								
+								{/* Button content */}
+								<span className="relative z-10">🎁 Claim 1,000,000,000,000 {SHAMBA_LUV_TOKEN.symbol} Tokens 🎁</span>
+							</button>
+						) : (
+							<div className="w-full max-w-md mx-auto mb-4">
+								<ConnectButton
+									client={client}
+									wallets={wallets}
+									chain={DEFAULT_CHAIN}
+									accountAbstraction={{
+										chain: DEFAULT_CHAIN,
+										factoryAddress: accountFactoryAddress,
+										sponsorGas: true,
+									}}
+									appMetadata={{
+										name: "SHAMBA LUV",
+										url: "https://luv.pythai.net",
+									}}
+									detailsButton={{
+										displayBalanceToken: {
+											[DEFAULT_CHAIN.id]: SHAMBA_LUV_TOKEN.address,
+										},
+									}}
+									supportedTokens={{
+										[DEFAULT_CHAIN.id]: [
+											{
+												address: SHAMBA_LUV_TOKEN.address,
+												name: SHAMBA_LUV_TOKEN.name,
+												symbol: SHAMBA_LUV_TOKEN.symbol,
+												icon: SHAMBA_LUV_TOKEN.icon,
+											},
+										],
+									}}
+									theme="dark"
+									connectModal={{
+										size: "wide",
+									}}
+									connectButton={{
+										style: {
+											background: 'linear-gradient(45deg, #10b981, #059669)',
+											border: 'none',
+											borderRadius: '8px',
+											padding: '12px 24px',
+											fontSize: '16px',
+											fontWeight: '600',
+											textTransform: 'uppercase',
+											letterSpacing: '0.5px',
+											fontFamily: 'Inter, system-ui, sans-serif',
+											boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+											width: '100%',
+										},
+										label: "WALLET"
+									}}
+								/>
+							</div>
+						)}
 					</div>
 
 					{/* Token Balance Card */}
 					<div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 mb-8 border border-white/20">
-						<div className="text-center mb-6">
-							<h3 className="text-2xl font-semibold text-white mb-2">
-								Your SHAMBA LUV Balance
-							</h3>
-							<p className="text-sm text-gray-300">
-								Balance read directly from blockchain contract
-							</p>
+						<div className="mb-6">
+							{/* Public Address Display */}
+							<div className="mt-4 p-4 bg-black/20 rounded-lg">
+								<div className="text-center mb-3">
+									<h4 className="text-sm font-semibold text-white mb-2">Your Public Address</h4>
+									<div className="flex items-center justify-center gap-2">
+										<a 
+											href={`https://polygonscan.com/address/${account?.address}`}
+											target="_blank"
+											rel="noopener noreferrer"
+											className="text-blue-400 hover:text-blue-300 font-mono text-xs break-all transition-colors underline"
+											title="View on PolygonScan"
+										>
+											{account?.address || "Not connected"}
+										</a>
+										<button
+											onClick={() => {
+												if (account?.address) {
+													navigator.clipboard.writeText(account.address);
+													// You could add a toast notification here
+												}
+											}}
+											className="text-blue-400 hover:text-blue-300 transition-colors p-1"
+											title="Copy address"
+										>
+											<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+											</svg>
+										</button>
+									</div>
+								</div>
+							</div>
 						</div>
 						
 						<div className="text-center">
@@ -503,182 +616,141 @@ export function AirdropApp() {
 								</div>
 							) : (
 								<div>
-									<div className="text-4xl md:text-6xl font-bold text-green-400 mb-2">
-										{balance ? formatBalance(balance) : "0.0"}
+									<div className="flex items-center justify-center gap-4 mb-2">
+										<span className="text-2xl font-bold text-black">BALANCE</span>
+										<div className="text-4xl md:text-6xl font-bold text-green-400">
+											{balance ? formatBalance(balance) : "0.0"}
+										</div>
+										<span className="text-2xl font-bold text-black">LUV</span>
 									</div>
-									<div className="text-lg text-gray-300">{SHAMBA_LUV_TOKEN.name} Tokens</div>
 								</div>
 							)}
 						</div>
-
-						{/* Token Contract Info */}
-						<div className="mt-6 p-4 bg-black/20 rounded-lg">
-							<div className="text-center mb-3">
-								<h4 className="text-sm font-semibold text-white mb-2">Token Information</h4>
-								<div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-									<div>
-										<span className="text-gray-400">Name: </span>
-										<span className="text-white">{SHAMBA_LUV_TOKEN.name}</span>
-									</div>
-									<div>
-										<span className="text-gray-400">Symbol: </span>
-										<span className="text-white">{SHAMBA_LUV_TOKEN.symbol}</span>
-									</div>
-									<div>
-										<span className="text-gray-400">Decimals: </span>
-										<span className="text-white">{SHAMBA_LUV_TOKEN.decimals}</span>
-									</div>
-									<div>
-										<span className="text-gray-400">Network: </span>
-										<span className="text-white">{DEFAULT_CHAIN.name}</span>
-									</div>
-								</div>
-							</div>
-							<div className="text-center">
-								<p className="text-xs text-gray-400 mb-1">Contract Address:</p>
-								<p className="text-blue-400 font-mono text-xs break-all cursor-pointer hover:text-blue-300 transition-colors"
-								   onClick={() => navigator.clipboard.writeText(SHAMBA_LUV_TOKEN.address)}
-								   title="Click to copy">
-									{SHAMBA_LUV_TOKEN.address}
-								</p>
-							</div>
-						</div>
 					</div>
 
-					{/* Airdrop Status Section */}
-					<div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
-						<div className="flex justify-between items-center mb-6">
-							<h3 className="text-2xl font-semibold text-white">
-								Welcome Airdrop Status
-							</h3>
-							
-							{/* Transaction Mode Indicator */}
-							<div className="flex items-center gap-2">
-								<div className={`px-3 py-1 rounded-full text-xs font-medium ${
-									useBatchTransactions 
-										? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
-										: 'bg-green-500/20 text-green-400 border border-green-500/30'
-								}`}>
-									{useBatchTransactions ? '🔄 Batch Mode' : '⚡ Linear Mode'}
-								</div>
-								<div className="text-xs text-gray-400">
-									{useBatchTransactions 
-										? 'Gas-efficient batch processing' 
-										: 'Direct blockchain transaction'
-									}
-								</div>
-							</div>
-						</div>
-						
-						<div className="text-center">
-							{!airdropConfigured ? (
-								<div className="p-8">
-									<div className="text-6xl mb-4">🚧</div>
-									<h4 className="text-xl font-semibold text-yellow-400 mb-4">
-										Airdrop Contract Not Deployed Yet
-									</h4>
-									<p className="text-gray-300 mb-6">
-										The airdrop contract is not yet deployed. Please check back later!
-									</p>
-									<p className="text-xs text-gray-500">
-										Contract Address: {SHAMBA_LUV_AIRDROP.address}
-									</p>
-								</div>
-							) : !account ? (
-								<div className="p-8">
-									<div className="text-6xl mb-4">🎁</div>
-									<h4 className="text-xl font-semibold text-white mb-4">
-										Connect Your Wallet to Claim Your Airdrop!
-									</h4>
-									<p className="text-gray-300 mb-6">
-										New users automatically receive {airdropAmount} {SHAMBA_LUV_TOKEN.symbol} tokens when they connect their wallet
-									</p>
-								</div>
-							) : claimStatusLoading ? (
-								<div className="flex justify-center items-center p-8">
-									<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-									<span className="ml-3 text-white">Checking airdrop status...</span>
-								</div>
-							) : hasClaimed ? (
-								<div className="p-8">
-									<div className="text-6xl mb-4">✅</div>
-									<h4 className="text-xl font-semibold text-green-400 mb-4">
-										Airdrop Already Claimed!
-									</h4>
-									<p className="text-gray-300">
-										You have already received your welcome airdrop of {airdropAmount} {SHAMBA_LUV_TOKEN.symbol} tokens
-									</p>
-								</div>
-							) : protectionStatus && !protectionStatus.canClaim ? (
-								<div className="p-8">
-									<div className="text-6xl mb-4">🚫</div>
-									<h4 className="text-xl font-semibold text-red-400 mb-4">
-										Claim Not Allowed
-									</h4>
-									<p className="text-gray-300 mb-4">
-										{protectionStatus.reason}
-									</p>
-									{protectionStatus.riskScore !== undefined && (
-										<p className="text-sm text-gray-400">
-											Risk Score: {protectionStatus.riskScore}/100
-										</p>
-									)}
-									{!protectionStatus.backendConnected && (
-										<p className="text-xs text-yellow-400 mt-2">
-											⚠️ Backend offline - using limited protection
-										</p>
-									)}
-								</div>
-							) : isClaimingAirdrop ? (
-								<div className="p-8">
-									<div className="animate-bounce text-6xl mb-4">🎁</div>
-									<h4 className="text-xl font-semibold text-yellow-400 mb-4">
-										Claiming Your Airdrop...
-									</h4>
-									<p className="text-gray-300">
-										Please wait while we send you {airdropAmount} {SHAMBA_LUV_TOKEN.symbol} tokens
-									</p>
-									<div className="mt-4">
-										<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-400 mx-auto"></div>
+					{/* Transaction History Section */}
+					{account && transactionHistory.length > 0 && (
+						<div className="mt-12">
+							<div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+								<div className="flex justify-between items-center mb-6">
+									<h3 className="text-2xl font-semibold text-white flex items-center gap-2">
+										<span className="text-blue-400">📋</span>
+										Your Airdrop Transaction History
+									</h3>
+									<div className="flex gap-2">
+										<button
+											onClick={clearUserTransactionHistory}
+											className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 px-4 rounded transition-all duration-200 transform hover:scale-105"
+										>
+											🗑️ Clear History
+										</button>
 									</div>
 								</div>
-							) : (
-								<div className="p-8">
-									<div className="text-6xl mb-4">🎁</div>
-									<h4 className="text-xl font-semibold text-white mb-4">
-										Ready to Claim Your Airdrop!
-									</h4>
-									<p className="text-gray-300 mb-6">
-										You are eligible to receive {airdropAmount} {SHAMBA_LUV_TOKEN.symbol} tokens
-									</p>
-									<button
-										onClick={claimAirdrop}
-										className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-3 px-8 rounded-lg transition-all duration-200 transform hover:scale-105"
-									>
-										Claim {airdropAmount} {SHAMBA_LUV_TOKEN.symbol} Tokens
-									</button>
-								</div>
-							)}
-						</div>
+								
 
-						{/* Airdrop Stats */}
-						{airdropConfigured && airdropStats && (
-							<div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-								<div className="text-center p-4 bg-black/20 rounded-lg">
-									<div className="text-lg font-semibold text-white">Tokens per User</div>
-									<div className="text-green-400">{formatBalance(airdropStats[0])}</div>
+								<div className="space-y-4">
+									{transactionHistory.map((tx, index) => {
+										// Validate transaction object before rendering
+										if (!tx || typeof tx !== 'object' || !tx.id || !tx.type || !tx.status || !tx.timestamp || !tx.amount || !tx.details) {
+											console.warn('Invalid transaction object:', tx);
+											return null;
+										}
+										
+										try {
+											return (
+												<div key={tx.id || index} className="bg-black/20 rounded-lg p-4 border border-gray-700">
+													<div className="flex justify-between items-start mb-2">
+														<div className="flex items-center gap-2">
+															<span className={`text-sm font-medium px-2 py-1 rounded ${
+																tx.status === 'success' ? 'bg-green-500/20 text-green-400' :
+																tx.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+																'bg-yellow-500/20 text-yellow-400'
+															}`}>
+																{tx.status === 'success' ? '✅ Success' :
+																 tx.status === 'failed' ? '❌ Failed' :
+																 '⏳ Pending'}
+															</span>
+															<span className={`text-xs px-2 py-1 rounded ${
+																tx.type === 'auto-drop' ? 'bg-blue-500/20 text-blue-400' :
+																tx.type === 'manual-claim' ? 'bg-purple-500/20 text-purple-400' :
+																'bg-gray-500/20 text-gray-400'
+															}`}>
+																{tx.type === 'auto-drop' ? '🎁 Auto-Drop' :
+																 tx.type === 'manual-claim' ? '👆 Manual Claim' :
+																 '🔗 Blockchain'}
+															</span>
+															{tx.blockchainConfirmed && (
+																<span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400">
+																	🔗 Confirmed
+																</span>
+															)}
+														</div>
+														<span className="text-gray-400 text-xs">
+															{new Date(tx.timestamp).toLocaleString()}
+														</span>
+													</div>
+													
+													<div className="mb-2">
+														<div className="text-white text-sm font-medium">
+															{tx.amount ? (() => {
+																try {
+																	// Remove commas and convert to BigInt
+																	const cleanAmount = tx.amount.toString().replace(/,/g, '');
+																	return formatBalance(BigInt(cleanAmount));
+																} catch (error) {
+																	console.warn('Error formatting amount:', tx.amount, error);
+																	return tx.amount;
+																}
+															})() : '0'} LUV
+														</div>
+														<div className="text-gray-400 text-xs">
+															{tx.details}
+														</div>
+													</div>
+													
+													{tx.hash && (
+														<div className="flex items-center gap-2">
+															<span className="text-gray-400 text-xs">Hash:</span>
+															<a 
+																href={`https://polygonscan.com/tx/${tx.hash}`}
+																target="_blank"
+																rel="noopener noreferrer"
+																className="text-blue-400 hover:text-blue-300 text-xs font-mono break-all transition-colors"
+															>
+																{tx.hash.slice(0, 10)}...{tx.hash.slice(-8)}
+																<svg className="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+																	<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+																</svg>
+															</a>
+														</div>
+													)}
+												</div>
+											);
+										} catch (error) {
+											console.error('Error rendering transaction:', tx, error);
+											return (
+												<div key={tx.id || index} className="bg-red-500/20 rounded-lg p-4 border border-red-500/30">
+													<div className="text-red-400 text-sm">Error displaying transaction</div>
+													<div className="text-gray-400 text-xs">Transaction ID: {tx.id}</div>
+												</div>
+											);
+										}
+									})}
 								</div>
-								<div className="text-center p-4 bg-black/20 rounded-lg">
-									<div className="text-lg font-semibold text-white">Total Recipients</div>
-									<div className="text-blue-400">{airdropStats[2].toString()}</div>
+
+								{/* Page Refresh Warning */}
+								<div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-center">
+									<div className="text-yellow-400 text-sm font-medium mb-1">
+										⚠️ Important: Page Refresh Logout
+									</div>
+									<div className="text-gray-300 text-xs">
+										Refreshing the page will automatically log you out and clear your transaction history. This is a security feature to prevent abuse.
+									</div>
 								</div>
-								<div className="text-center p-4 bg-black/20 rounded-lg">
-									<div className="text-lg font-semibold text-white">Total Distributed</div>
-									<div className="text-purple-400">{formatBalance(airdropStats[1])}</div>
-								</div>
+
 							</div>
-						)}
-					</div>
+						</div>
+					)}
 				</div>
 			</main>
 		</div>

@@ -73,17 +73,111 @@ export const SHAMBA_LUV_TOKEN = {
 export const SHAMBA_LUV_AIRDROP = {
 	address: AIRDROP_ADDRESS || "0x0000000000000000000000000000000000000000",
 	abi: [
-		"function claimAirdrop() external",
-		"function hasUserClaimed(address user) external view returns (bool)",
-		"function getAirdropStats() external view returns (uint256, uint256, uint256, uint256, uint256)",
-		"function airdropAmount() external view returns (uint256)",
-		"function getAirdropAmount() external view returns (uint256)",
-		"function hasSufficientBalance() external view returns (bool)",
-		"function batchAirdrop(address[] calldata recipients) external",
-		"function setAirdropAmount(uint256 _newAmount) external",
-		"function depositTokens(uint256 amount) external",
-		"function withdrawTokens(uint256 amount) external",
-		"function emergencyWithdraw() external"
+		// Core airdrop functions - exact ABI from working luvdrop implementation
+		{
+			"inputs": [],
+			"name": "claimAirdrop",
+			"outputs": [],
+			"stateMutability": "nonpayable",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{ "internalType": "address", "name": "token", "type": "address" }
+			],
+			"name": "claimAirdropForToken",
+			"outputs": [],
+			"stateMutability": "nonpayable",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{ "internalType": "address", "name": "token", "type": "address" },
+				{ "internalType": "address", "name": "user", "type": "address" }
+			],
+			"name": "hasUserClaimed",
+			"outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{ "internalType": "address", "name": "user", "type": "address" }
+			],
+			"name": "hasUserClaimed",
+			"outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		
+		// View functions
+		{
+			"inputs": [
+				{ "internalType": "address", "name": "token", "type": "address" }
+			],
+			"name": "getAirdropStats",
+			"outputs": [
+				{ "internalType": "uint256", "name": "airdropAmount", "type": "uint256" },
+				{ "internalType": "uint256", "name": "totalClaimed", "type": "uint256" },
+				{ "internalType": "uint256", "name": "totalRecipients", "type": "uint256" },
+				{ "internalType": "uint256", "name": "contractBalance", "type": "uint256" },
+				{ "internalType": "bool", "name": "isActive", "type": "bool" }
+			],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [],
+			"name": "getAirdropStats",
+			"outputs": [
+				{ "internalType": "uint256", "name": "airdropAmount", "type": "uint256" },
+				{ "internalType": "uint256", "name": "totalClaimed", "type": "uint256" },
+				{ "internalType": "uint256", "name": "totalRecipients", "type": "uint256" },
+				{ "internalType": "uint256", "name": "contractBalance", "type": "uint256" },
+				{ "internalType": "bool", "name": "isActive", "type": "bool" }
+			],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [],
+			"name": "defaultToken",
+			"outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{ "internalType": "address", "name": "token", "type": "address" }
+			],
+			"name": "getTokenBalance",
+			"outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [],
+			"name": "getTokenBalance",
+			"outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{ "internalType": "address", "name": "token", "type": "address" }
+			],
+			"name": "isAirdropActive",
+			"outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [],
+			"name": "isAirdropActive",
+			"outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+			"stateMutability": "view",
+			"type": "function"
+		}
 	]
 } as const;
 

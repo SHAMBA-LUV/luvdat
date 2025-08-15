@@ -1,7 +1,7 @@
-import { ConnectButton, ThirdwebProvider, useActiveAccount, useReadContract } from "thirdweb/react";
+import { ConnectButton, ThirdwebProvider, useActiveAccount, useReadContract, useDisconnect } from "thirdweb/react";
 import { useState, useEffect } from "react";
 import { client } from "./client";
-import { AirdropApp } from "./AirdropApp";
+import AirdropApp from "./AirdropApp";
 import { DEFAULT_CHAIN, SHAMBA_LUV_TOKEN, SHAMBA_LUV_AIRDROP, isAirdropContractConfigured } from "./tokens";
 import { inAppWallet, createWallet } from "thirdweb/wallets";
 import { getContract } from "thirdweb";
@@ -10,43 +10,128 @@ import { registerUser } from "./utils/airdropProtection";
 // Account factory address from .env
 const accountFactoryAddress = import.meta.env.VITE_TEMPLATE_ACCOUNT_MANAGER_ADDRESS;
 
-// Configure wallets like the working example
+// Configure wallets - Prioritize smart wallet for gasless airdrop claims
 const wallets = [
   inAppWallet({
     auth: {
       options: [
         "google",
-        "apple", 
         "facebook",
-        "discord",
-        "line",
         "x",
+        "telegram",
+        "discord",
+        "github",
         "coinbase",
         "farcaster",
-        "telegram",
-        "github",
         "twitch",
+        "apple", 
+        "line",
         "steam",
         "email",
         "phone",
-        "passkey",
-        "guest"
+        "passkey"
       ],
     },
   }),
-  createWallet("io.metamask"),
+  createWallet("io.metamask"), // Regular MetaMask EOA - fallback option
   createWallet("com.coinbase.wallet"),
 ];
 
 function AppContent() {
 	const account = useActiveAccount();
+	const disconnect = useDisconnect();
 	const [userRegistered, setUserRegistered] = useState(false);
+
+	// Handle page refresh - log out user
+	useEffect(() => {
+		// Check if this is a page refresh
+		const isPageRefresh = !sessionStorage.getItem('pageLoaded');
+		if (isPageRefresh) {
+			// This is a fresh page load (refresh), clear all data and force logout
+			console.log('🔄 Fresh page load detected - clearing all data and forcing logout');
+			localStorage.clear();
+			sessionStorage.clear();
+			
+			// Force a complete page reload to ensure wallet disconnection
+			if (account?.address) {
+				console.log('🔄 Forcing complete logout on refresh');
+				window.location.href = window.location.href.split('?')[0]; // Remove any query params
+			}
+		}
+		
+		// Mark page as loaded
+		sessionStorage.setItem('pageLoaded', 'true');
+
+		const handleBeforeUnload = () => {
+			// Clear all data on page refresh
+			console.log('🔄 Page refresh detected - clearing all data');
+			localStorage.clear();
+			sessionStorage.clear();
+		};
+
+		const handleVisibilityChange = () => {
+			// If page becomes hidden (user navigates away or refreshes), clear data
+			if (document.hidden) {
+				console.log('👋 User leaving page - clearing data');
+				localStorage.clear();
+				sessionStorage.clear();
+			}
+		};
+
+		// Force logout on page refresh by clearing wallet state
+		const handlePageShow = (event: PageTransitionEvent) => {
+			// If this is a page refresh (not a back/forward navigation)
+			if (event.persisted) {
+				console.log('🔄 Page refresh detected - forcing complete logout');
+				// Clear all data and force reload
+				localStorage.clear();
+				sessionStorage.clear();
+				window.location.reload();
+			}
+		};
+
+		// Listen for page refresh and navigation events
+		window.addEventListener('beforeunload', handleBeforeUnload);
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		window.addEventListener('pageshow', handlePageShow);
+
+		return () => {
+			window.removeEventListener('beforeunload', handleBeforeUnload);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
+			window.removeEventListener('pageshow', handlePageShow);
+		};
+	}, [account?.address]);
+
+	// Proper logout function
+	const handleLogout = async () => {
+		try {
+			// Reset user registration state
+			setUserRegistered(false);
+			
+			// Clear all stored data
+			localStorage.clear();
+			sessionStorage.clear();
+			
+			console.log('✅ Logged out successfully');
+			
+			// Force page reload to ensure complete logout
+			window.location.reload();
+		} catch (error) {
+			console.error('Logout error:', error);
+		}
+	};
 
 	// Register user when account connects
 	useEffect(() => {
 		const initializeUser = async () => {
 			if (account?.address && !userRegistered) {
 				try {
+					// Temporarily skip backend registration to fix CORS issues
+					console.log('⏭️ Skipping backend user registration - CORS fix');
+					setUserRegistered(true);
+					
+					// TODO: Re-enable this when CORS is fixed
+					/*
 					// Try to detect auth method from wallet type
 					const authMethod = account.address.startsWith('0x') ? 
 						(account as any).wallet?.id || 'unknown' : 'unknown';
@@ -61,6 +146,7 @@ function AppContent() {
 					if (!registration.success) {
 						console.warn('User registration failed:', registration.message);
 					}
+					*/
 				} catch (error) {
 					console.error('User registration error:', error);
 				}
@@ -71,7 +157,7 @@ function AppContent() {
 	}, [account?.address, userRegistered]);
 
 	if (account) {
-		return <AirdropApp />;
+		return <AirdropApp onLogout={handleLogout} />;
 	}
 
 	return <TrippyLandingPage />;
@@ -213,8 +299,8 @@ function TrippyLandingPage() {
 									sponsorGas: true,
 								}}
 								appMetadata={{
-									name: "SHAMBA LUV Token",
-									url: "https://shambaluv.com",
+									name: "SHAMBA LUV",
+									url: "https://luv.pythai.net",
 								}}
 								detailsButton={{
 									displayBalanceToken: {
@@ -398,8 +484,8 @@ function TrippyLandingPage() {
 											sponsorGas: true,
 										}}
 										appMetadata={{
-											name: "SHAMBA LUV Token",
-											url: "https://shambaluv.com",
+											name: "SHAMBA LUV",
+											url: "https://luv.pythai.net",
 										}}
 										detailsButton={{
 											displayBalanceToken: {
@@ -452,9 +538,12 @@ function TrippyLandingPage() {
 							🎁 FREE AIRDROP AVAILABLE 🎁
 						</h2>
 						<p className="text-lg md:text-xl text-gray-300 mb-6 max-w-lg mx-auto">
-							Connect your wallet now and automatically receive{" "}
-							<span className="text-yellow-400 font-bold">1 TRILLION LUV</span>{" "}
-							tokens instantly!
+							create your LUV wallet now
+						</p>
+						<p className="text-lg md:text-xl text-gray-300 mb-6 max-w-lg mx-auto">
+							receive{" "}
+							<span className="text-yellow-400 font-bold">1 trillion LUV</span>{" "}
+							instantly
 						</p>
 						<div className="text-sm text-gray-400 mb-8">
 							💝 One-time airdrop per wallet • No fees • Instant delivery
@@ -462,11 +551,18 @@ function TrippyLandingPage() {
 					</div>
 				</div>
 
-				{/* Token Economics */}
+				{/* Emotonomics */}
 				<div className="mb-16 max-w-6xl mx-auto">
 					<div className="text-center mb-8">
 						<h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-							💰 Token Economics
+							💰 <a 
+								href="https://github.com/SHAMBA-LUV/SHAMBALUV/blob/main/docs/LUVPAPER.md"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-pink-400 hover:text-pink-300 transition-colors underline"
+							>
+								emotonomics
+							</a>
 						</h2>
 						<p className="text-gray-300 text-lg">
 							Built for holders with automatic rewards and community growth. Hold LUV to watch LUV grow.
@@ -648,9 +744,15 @@ function TrippyLandingPage() {
 							<div className="text-center">
 								<div className="text-sm text-gray-400 mb-2">Contract Address</div>
 								<div className="flex items-center justify-center gap-3">
-									<code className="bg-black/50 px-4 py-2 rounded-lg text-sm text-blue-400 font-mono break-all">
+									<a 
+										href={`https://polygonscan.com/token/${SHAMBA_LUV_TOKEN.address}`}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="bg-black/50 px-4 py-2 rounded-lg text-sm text-blue-400 font-mono break-all hover:text-blue-300 transition-colors underline"
+										title="Click to view on PolygonScan"
+									>
 										{SHAMBA_LUV_TOKEN.address}
-									</code>
+									</a>
 									<button
 										onClick={() => copyToClipboard(SHAMBA_LUV_TOKEN.address)}
 										className="bg-blue-500/20 hover:bg-blue-500/30 px-3 py-2 rounded-lg transition-colors"
@@ -827,7 +929,14 @@ function TrippyLandingPage() {
 						<div className="bg-black/40 backdrop-blur-lg rounded-2xl p-6 border border-gray-500/30">
 							<h3 className="text-xl font-bold text-white mb-3">🔐 Is SHAMBA LUV safe?</h3>
 							<p className="text-gray-300">
-								Yes! Our smart contract is verified on PolygonScan, includes ReentrancyGuard protection, 
+								Yes! Our smart contract is verified on <a 
+									href="https://polygonscan.com/token/0x1035760d0f60B35B63660ac0774ef363eAa5456e"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="text-blue-400 hover:text-blue-300 underline"
+								>
+									PolygonScan
+								</a>, includes ReentrancyGuard protection, 
 								and has been audited for security. Plus, with Account Abstraction, your wallet is more secure than ever.
 							</p>
 						</div>

@@ -62,3 +62,16 @@
 .animate-bounce-slow {
   animation: bounce 3s infinite;
 }
+
+@keyframes slide-wave {
+  0%, 100% { 
+    transform: translateX(-100%) skewX(-12deg); 
+  }
+  50% { 
+    transform: translateX(100%) skewX(-12deg); 
+  }
+}
+
+.animate-slide-wave {
+  animation: slide-wave 4s ease-in-out infinite;
+}
